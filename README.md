@@ -1,57 +1,59 @@
-# Welcome to your Expo app 👋
+# Dミセ mobile
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+既存のシフト管理Webアプリ「Dミセ」のスタッフ向け機能を、iOS / Androidのネイティブアプリとして提供するExpoプロジェクトです。PWA移行ではなく、スタッフが日常的に使う操作をネイティブUIへ移植することを最優先にします。
 
-## Get started
+## 現在の実装範囲
 
-1. Install dependencies
+- Expo Routerのネイティブタブ（ホーム・シフト・打刻・その他）
+- スタッフホーム、希望シフト提出、確定シフト、GPS打刻、通知、ヘルプ応募、勤怠後入力、プロフィール
+- Supabase Authのメールアドレス・パスワード認証とSecureStoreセッション保存
+- テナント/店舗切替、通知設定、Realtime通知、Expo Push Token登録
+- RLSと認証必須RPCを利用したスタッフ本人データの読み書き
+- Dミセのブランドアセットとライト / ダークテーマ
+- `@expo/ui`、NativeTabs、Hapticsを利用したネイティブ操作
 
-   ```bash
-   npm install
-   ```
+業務画面ではデモデータを表示せず、設定不足・所属なし・取得失敗を明示します。
 
-2. Start the app
+## セットアップ
 
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+Node.js 22.13以上を使用します。
 
 ```bash
-npm run reset-project
+npm install
+cp .env.example .env
+npm start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+`.env`には、WEB版の公開環境変数からネイティブ版で使用する値を入力します。
 
-### Other setup steps
+```dotenv
+EXPO_PUBLIC_SUPABASE_URL=
+EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY=
+EXPO_PUBLIC_WEB_APP_URL=
+EXPO_PUBLIC_APP_NAME=
+EXPO_PUBLIC_EAS_PROJECT_ID=
+EXPO_PUBLIC_PUSH_NOTIFICATIONS_ENABLED=false
+```
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+対応関係は [.env.example](./.env.example) に記載しています。`EXPO_PUBLIC_*`はアプリに埋め込まれるため、`service_role`、メール、SMTP、Expo Access Tokenなどの秘密値は設定しません。サーバー側の例は [supabase/.env.example](./supabase/.env.example) に分離しています。
 
-## Learn more
+## Supabase
 
-To learn more about developing your project with Expo, look at the following resources:
+スタッフ用の追加スキーマは `supabase/migrations/` が正本です。
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+- 勤怠打刻を原子的に保存するRPC
+- 勤怠の後から入力・重複検証・監査ログRPC
+- 端末別Push Tokenテーブルと本人限定RLS
 
-## Join the community
+2026-07-24時点で接続済みの`D-mise`プロジェクトへ適用済みです。Web版も同じDBを使うため、Web版リポジトリ側のmigration履歴と生成型を同期してください。
 
-Join our community of developers creating universal apps.
+## 品質チェック
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
-# digital-shifts-mobile
+```bash
+npm run lint
+npm exec tsc -- --noEmit
+npx expo install --check
+npx expo config --type public
+```
+
+実装範囲、移植順序、未決事項は [docs/native-implementation-plan.md](./docs/native-implementation-plan.md) を参照してください。画像の管理方針は [assets/images/README.md](./assets/images/README.md) にまとめています。

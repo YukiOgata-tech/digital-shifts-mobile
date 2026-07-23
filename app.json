@@ -1,36 +1,52 @@
 {
   "expo": {
-    "name": "digital-shifts-mobile",
+    "name": "Dミセ",
     "slug": "digital-shifts-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/brand/dmise-logo.png",
     "scheme": "digitalshiftsmobile",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/images/brand/dmise-logo.png"
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "foregroundImage": "./assets/images/brand/dmise-logo.png"
       },
       "predictiveBackGestureEnabled": false
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/brand/dmise-logo.png"
     },
     "plugins": [
       "expo-router",
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "backgroundColor": "#F5F7F5",
+          "image": "./assets/images/brand/dmise-logo.png",
+          "imageWidth": 152,
+          "dark": {
+            "backgroundColor": "#101512",
+            "image": "./assets/images/brand/dmise-logo.png"
+          }
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Dミセは、店舗の打刻範囲を確認するため、出勤・退勤時に現在地を使用します。"
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#079663",
+          "defaultChannel": "staff-updates",
+          "enableBackgroundRemoteNotifications": false
         }
       ]
     ],

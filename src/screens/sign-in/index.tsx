@@ -1,0 +1,161 @@
+import { Image } from 'expo-image';
+import { useRouter } from 'expo-router';
+import { useState } from 'react';
+import {
+  KeyboardAvoidingView,
+  ScrollView,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+
+import { NativeActionButton } from '@/components/ui/native-action-button';
+import { SectionCard } from '@/components/ui/section-card';
+import { appRadii, appSpacing, useAppTheme } from '@/constants/app-theme';
+import { env, isSupabaseConfigured } from '@/lib/env';
+import { supabase } from '@/lib/supabase';
+
+export function SignInScreen() {
+  const router = useRouter();
+  const theme = useAppTheme();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const signIn = async () => {
+    if (!supabase) {
+      setErrorMessage('Supabaseの公開URLとPublishable Keyを設定してください。');
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMessage(null);
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    setIsSubmitting(false);
+
+    if (error) {
+      setErrorMessage(error.message);
+      return;
+    }
+
+    router.replace('/(staff)/(home)');
+  };
+
+  return (
+    <KeyboardAvoidingView
+      behavior={process.env.EXPO_OS === 'ios' ? 'padding' : undefined}
+      style={{ flex: 1, backgroundColor: theme.background }}>
+      <ScrollView
+        contentInsetAdjustmentBehavior="automatic"
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{
+          flexGrow: 1,
+          justifyContent: 'center',
+          paddingHorizontal: appSpacing.xxl,
+          paddingVertical: 64,
+          gap: appSpacing.xxl,
+        }}>
+        <View style={{ alignItems: 'center', gap: appSpacing.lg }}>
+          <Image
+            source={require('@/assets/images/brand/dmise-logo.png')}
+            contentFit="contain"
+            style={{ width: 104, height: 104 }}
+          />
+          <View style={{ alignItems: 'center', gap: appSpacing.xs }}>
+            <Text selectable style={{ color: theme.text, fontSize: 30, fontWeight: '700' }}>
+              {env.appName}
+            </Text>
+            <Text selectable style={{ color: theme.textSecondary, fontSize: 15 }}>
+              スタッフアカウントでログイン
+            </Text>
+          </View>
+        </View>
+
+        <SectionCard style={{ gap: appSpacing.lg }}>
+          <View style={{ gap: appSpacing.sm }}>
+            <Text selectable style={{ color: theme.text, fontSize: 14, fontWeight: '700' }}>
+              メールアドレス
+            </Text>
+            <TextInput
+              autoCapitalize="none"
+              autoComplete="email"
+              keyboardType="email-address"
+              returnKeyType="next"
+              value={email}
+              onChangeText={setEmail}
+              placeholder="staff@example.com"
+              placeholderTextColor={theme.textSecondary}
+              style={{
+                minHeight: 50,
+                paddingHorizontal: appSpacing.lg,
+                color: theme.text,
+                backgroundColor: theme.surfaceMuted,
+                borderRadius: appRadii.md,
+                borderCurve: 'continuous',
+                fontSize: 16,
+              }}
+            />
+          </View>
+
+          <View style={{ gap: appSpacing.sm }}>
+            <Text selectable style={{ color: theme.text, fontSize: 14, fontWeight: '700' }}>
+              パスワード
+            </Text>
+            <TextInput
+              autoCapitalize="none"
+              autoComplete="current-password"
+              secureTextEntry
+              returnKeyType="go"
+              value={password}
+              onChangeText={setPassword}
+              onSubmitEditing={() => void signIn()}
+              placeholder="パスワード"
+              placeholderTextColor={theme.textSecondary}
+              style={{
+                minHeight: 50,
+                paddingHorizontal: appSpacing.lg,
+                color: theme.text,
+                backgroundColor: theme.surfaceMuted,
+                borderRadius: appRadii.md,
+                borderCurve: 'continuous',
+                fontSize: 16,
+              }}
+            />
+          </View>
+
+          {errorMessage ? (
+            <Text selectable style={{ color: theme.danger, fontSize: 14, lineHeight: 20 }}>
+              {errorMessage}
+            </Text>
+          ) : null}
+
+          <NativeActionButton
+            label={isSubmitting ? 'ログイン中…' : 'ログイン'}
+            disabled={
+              isSubmitting ||
+              !isSupabaseConfigured ||
+              email.trim().length === 0 ||
+              password.length === 0
+            }
+            haptic="success"
+            onPress={() => void signIn()}
+          />
+        </SectionCard>
+
+        {!isSupabaseConfigured ? (
+          <Text
+            selectable
+            style={{
+              color: theme.textSecondary,
+              fontSize: 13,
+              lineHeight: 19,
+              textAlign: 'center',
+            }}>
+            `.env.example`を参考にローカル環境変数を設定するとログインできます。
+          </Text>
+        ) : null}
+      </ScrollView>
+    </KeyboardAvoidingView>
+  );
+}
