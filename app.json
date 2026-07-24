@@ -12,7 +12,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#D1FAE5",
         "foregroundImage": "./assets/images/brand/dmise-logo.png"
       },
       "predictiveBackGestureEnabled": false
@@ -26,11 +26,11 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#F5F7F5",
+          "backgroundColor": "#F7F3EA",
           "image": "./assets/images/brand/dmise-logo.png",
           "imageWidth": 152,
           "dark": {
-            "backgroundColor": "#101512",
+            "backgroundColor": "#0F172A",
             "image": "./assets/images/brand/dmise-logo.png"
           }
         }
@@ -44,7 +44,7 @@
       [
         "expo-notifications",
         {
-          "color": "#079663",
+          "color": "#059669",
           "defaultChannel": "staff-updates",
           "enableBackgroundRemoteNotifications": false
         }

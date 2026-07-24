@@ -2,7 +2,7 @@ import { Stack } from 'expo-router';
 
 import { useAppTheme } from '@/constants/app-theme';
 
-export default function ShiftsLayout() {
+export default function SettingsLayout() {
   const theme = useAppTheme();
 
   return (
@@ -11,7 +11,7 @@ export default function ShiftsLayout() {
         headerShown: false,
         contentStyle: { backgroundColor: theme.background },
       }}>
-      <Stack.Screen name="index" options={{ title: 'シフト' }} />
+      <Stack.Screen name="index" options={{ title: '設定' }} />
     </Stack>
   );
 }

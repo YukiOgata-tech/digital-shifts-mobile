@@ -4,16 +4,18 @@ import { useEffect } from 'react';
 
 function resolveNativePath(data: Record<string, unknown>) {
   const explicitPath = data.nativePath;
+  if (explicitPath === '/notifications') return '/(staff)/(notifications)';
+  if (explicitPath === '/profile') return '/(staff)/(settings)';
   if (typeof explicitPath === 'string' && explicitPath.startsWith('/')) return explicitPath;
 
   const webPath = data.linkPath ?? data.link_path;
-  if (typeof webPath !== 'string') return '/notifications';
+  if (typeof webPath !== 'string') return '/(staff)/(notifications)';
   if (webPath.includes('/help')) return '/help';
   if (webPath.includes('/attendance')) return '/(staff)/(attendance)';
   if (webPath.includes('/shift-periods') || webPath.includes('/shifts')) {
     return '/(staff)/(shifts)';
   }
-  return '/notifications';
+  return '/(staff)/(notifications)';
 }
 
 export function PushNotificationObserver() {

@@ -6,16 +6,17 @@ import { EmptyState, ErrorState, LoadingState } from '@/components/ui/data-state
 import { NativeActionButton } from '@/components/ui/native-action-button';
 import { SectionCard } from '@/components/ui/section-card';
 import { SectionHeading } from '@/components/ui/section-heading';
+import { StaffHeroCard } from '@/components/ui/staff-hero-card';
 import { StatusPill } from '@/components/ui/status-pill';
 import { appRadii, appSpacing, useAppTheme } from '@/constants/app-theme';
 import {
   formatDateLabel,
   formatDateTime,
   formatTime,
-  greetingForNow,
   toDateKey,
 } from '@/features/staff/date';
 import {
+  useActiveAttendanceRecord,
   useAssignments,
   useNotifications,
   useOpenShiftPeriods,
@@ -26,6 +27,7 @@ export function HomeScreen() {
   const router = useRouter();
   const theme = useAppTheme();
   const staff = useStaffIdentity();
+  const attendance = useActiveAttendanceRecord();
   const assignments = useAssignments(1, 31);
   const periods = useOpenShiftPeriods();
   const notifications = useNotifications();
@@ -34,8 +36,13 @@ export function HomeScreen() {
   const upcoming = assignments.data?.filter((shift) => shift.workDate >= todayKey).slice(0, 2) ?? [];
   const openPeriod = periods.data?.[0];
   const firstNotice = notifications.data?.[0];
+  const isWorking = attendance.data?.status === 'open';
   const isRefreshing =
-    staff.isLoading || assignments.isFetching || periods.isFetching || notifications.isFetching;
+    staff.isLoading ||
+    assignments.isFetching ||
+    periods.isFetching ||
+    notifications.isFetching ||
+    attendance.isFetching;
 
   const refresh = () => {
     void Promise.all([
@@ -43,6 +50,7 @@ export function HomeScreen() {
       assignments.refetch(),
       periods.refetch(),
       notifications.refetch(),
+      attendance.refetch(),
     ]);
   };
 
@@ -75,60 +83,116 @@ export function HomeScreen() {
 
   return (
     <AppScreen refreshing={isRefreshing} onRefresh={refresh}>
-      <View style={{ gap: appSpacing.sm }}>
-        <Text selectable style={{ color: theme.textSecondary, fontSize: 15 }}>
-          {staff.activeStore?.name ?? staff.activeTenant.name}
-        </Text>
-        <Text selectable style={{ color: theme.text, fontSize: 24, fontWeight: '700' }}>
-          {greetingForNow()}、{staff.profile?.displayName ?? 'スタッフ'}さん
-        </Text>
-      </View>
-
-      <SectionCard tone="brand">
+      <StaffHeroCard
+        eyebrow="Staff home"
+        title="今日の勤務"
+        trailing={
+          <View
+            style={{
+              paddingHorizontal: appSpacing.md,
+              paddingVertical: 6,
+              borderRadius: appRadii.pill,
+              backgroundColor: isWorking ? theme.danger : theme.brandBright,
+            }}>
+            <Text
+              style={{
+                color: isWorking ? '#FFFFFF' : theme.hero,
+                fontSize: 11,
+                fontWeight: '900',
+              }}>
+              {isWorking ? '勤務中' : '待機中'}
+            </Text>
+          </View>
+        }>
         <View
           style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'space-between',
+            padding: appSpacing.lg,
             gap: appSpacing.md,
+            borderRadius: appRadii.lg,
+            borderCurve: 'continuous',
+            borderWidth: 1,
+            borderColor: 'rgba(255,255,255,0.12)',
+            backgroundColor: 'rgba(255,255,255,0.09)',
           }}>
-          <View style={{ flex: 1, gap: appSpacing.xs }}>
-            <Text selectable style={{ color: theme.brandStrong, fontSize: 13, fontWeight: '700' }}>
-              今日の勤務
-            </Text>
+          {todayShift ? (
+            <View style={{ gap: appSpacing.sm }}>
             <Text
               selectable
               style={{
-                color: theme.text,
-                fontSize: todayShift ? 32 : 20,
-                fontWeight: '700',
+                  color: theme.heroText,
+                  fontSize: 36,
+                  fontWeight: '900',
+                  letterSpacing: -1.2,
                 fontVariant: ['tabular-nums'],
               }}>
-              {todayShift
-                ? `${formatTime(todayShift.startAt)}–${formatTime(todayShift.endAt)}`
-                : '予定はありません'}
+                {formatTime(todayShift.startAt)}
+                <Text style={{ color: 'rgba(255,255,255,0.42)', fontSize: 25 }}> - </Text>
+                {formatTime(todayShift.endAt)}
             </Text>
+              <Text selectable style={{ color: theme.heroMuted, fontSize: 13, fontWeight: '700' }}>
+                {todayShift.storeName}
+                {todayShift.roleLabel ? ` · ${todayShift.roleLabel}` : ''}
+                {` · 休憩 ${todayShift.breakMinutes}分`}
+              </Text>
           </View>
-          <StatusPill label={todayShift ? '確定' : '休日'} tone={todayShift ? 'brand' : 'neutral'} />
+          ) : (
+            <View style={{ gap: appSpacing.xs }}>
+              <Text
+                selectable
+                style={{ color: theme.heroText, fontSize: 19, fontWeight: '900' }}>
+                本日の公開シフトはありません
+              </Text>
+              <Text selectable style={{ color: theme.heroMuted, fontSize: 13 }}>
+                必要な場合は店舗を選んで打刻できます。
+              </Text>
+            </View>
+          )}
+          <NativeActionButton
+            label={isWorking ? '退勤画面を開く' : todayShift ? '出勤する' : '打刻画面へ'}
+            disabled={!staff.activeStore}
+            haptic="success"
+            onPress={() => router.push('/(staff)/(attendance)')}
+          />
         </View>
+      </StaffHeroCard>
 
-        {todayShift ? (
-          <View style={{ flexDirection: 'row', gap: appSpacing.lg }}>
-            <Text selectable style={{ color: theme.textSecondary, fontSize: 14 }}>
-              {todayShift.roleLabel ?? todayShift.storeName}
-            </Text>
-            <Text selectable style={{ color: theme.textSecondary, fontSize: 14 }}>
-              休憩 {todayShift.breakMinutes}分
-            </Text>
-          </View>
-        ) : null}
+      <View style={{ gap: 4, paddingHorizontal: appSpacing.xs }}>
+        <Text selectable style={{ color: theme.textSecondary, fontSize: 12, fontWeight: '700' }}>
+          {staff.activeStore?.name ?? staff.activeTenant.name}
+        </Text>
+        <Text selectable style={{ color: theme.text, fontSize: 20, fontWeight: '900' }}>
+          {staff.profile?.displayName ?? 'スタッフ'}さん
+        </Text>
+      </View>
 
-        <NativeActionButton
-          label="打刻画面を開く"
-          disabled={!staff.activeStore}
+      <View style={{ flexDirection: 'row', gap: appSpacing.sm }}>
+        <QuickAction
+          label="希望提出"
+          detail={openPeriod?.submittedAt ? '完了' : openPeriod ? '要対応' : 'なし'}
+          tone="warning"
+          onPress={() => {
+            if (openPeriod) {
+              router.push(
+                { pathname: '/shift-request', params: { periodId: openPeriod.id } } as never,
+              );
+            } else {
+              router.push('/(staff)/(stores)');
+            }
+          }}
+        />
+        <QuickAction
+          label="シフト"
+          detail="確認"
+          tone="brand"
+          onPress={() => router.push('/(staff)/(shifts)')}
+        />
+        <QuickAction
+          label="打刻"
+          detail={isWorking ? '勤務中' : '履歴'}
+          tone="neutral"
           onPress={() => router.push('/(staff)/(attendance)')}
         />
-      </SectionCard>
+      </View>
 
       {openPeriod ? (
         <Pressable
@@ -144,6 +208,8 @@ export function HomeScreen() {
             backgroundColor: theme.warningSoft,
             borderRadius: appRadii.lg,
             borderCurve: 'continuous',
+            borderWidth: 1,
+            borderColor: '#FCD34D',
             opacity: pressed ? 0.75 : 1,
           })}>
           <View
@@ -160,7 +226,7 @@ export function HomeScreen() {
               {formatDateTime(openPeriod.requestDeadlineAt)}
             </Text>
           </View>
-          <Text selectable style={{ color: theme.text, fontSize: 17, fontWeight: '700' }}>
+          <Text selectable style={{ color: theme.text, fontSize: 17, fontWeight: '900' }}>
             {openPeriod.name}
           </Text>
           <Text selectable style={{ color: theme.textSecondary, fontSize: 14 }}>
@@ -182,7 +248,7 @@ export function HomeScreen() {
             <SectionCard key={item.id} style={{ paddingVertical: appSpacing.md }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: appSpacing.lg }}>
                 <View style={{ width: 86, gap: 2 }}>
-                  <Text selectable style={{ color: theme.text, fontSize: 16, fontWeight: '700' }}>
+                  <Text selectable style={{ color: theme.text, fontSize: 16, fontWeight: '900' }}>
                     {formatDateLabel(`${item.workDate}T00:00:00+09:00`)}
                   </Text>
                 </View>
@@ -192,7 +258,7 @@ export function HomeScreen() {
                     style={{
                       color: theme.text,
                       fontSize: 18,
-                      fontWeight: '700',
+                      fontWeight: '900',
                       fontVariant: ['tabular-nums'],
                     }}>
                     {formatTime(item.startAt)}–{formatTime(item.endAt)}
@@ -214,12 +280,12 @@ export function HomeScreen() {
         <SectionHeading
           title="お知らせ"
           action="通知を見る"
-          onActionPress={() => router.push('/notifications')}
+          onActionPress={() => router.push('/(staff)/(notifications)')}
         />
         {firstNotice ? (
           <Pressable
             accessibilityRole="button"
-            onPress={() => router.push('/notifications')}
+            onPress={() => router.push('/(staff)/(notifications)')}
             style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}>
             <SectionCard>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: appSpacing.sm }}>
@@ -256,5 +322,50 @@ export function HomeScreen() {
         )}
       </View>
     </AppScreen>
+  );
+}
+
+function QuickAction({
+  label,
+  detail,
+  tone,
+  onPress,
+}: {
+  label: string;
+  detail: string;
+  tone: 'brand' | 'warning' | 'neutral';
+  onPress: () => void;
+}) {
+  const theme = useAppTheme();
+  const colors = {
+    brand: { background: theme.brandSoft, foreground: theme.brandStrong, border: '#A7F3D0' },
+    warning: { background: theme.warningSoft, foreground: theme.warning, border: '#FDE68A' },
+    neutral: {
+      background: theme.surface,
+      foreground: theme.text,
+      border: theme.border,
+    },
+  }[tone];
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flex: 1,
+        minHeight: 82,
+        justifyContent: 'space-between',
+        padding: appSpacing.md,
+        borderRadius: appRadii.md,
+        borderCurve: 'continuous',
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: colors.background,
+        opacity: pressed ? 0.7 : 1,
+        boxShadow: '0 6px 16px rgba(15, 23, 42, 0.07)',
+      })}>
+      <Text style={{ color: colors.foreground, fontSize: 12, fontWeight: '800' }}>{label}</Text>
+      <Text style={{ color: colors.foreground, fontSize: 18, fontWeight: '900' }}>{detail}</Text>
+    </Pressable>
   );
 }

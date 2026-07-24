@@ -3,6 +3,7 @@ import { Alert, Pressable, Text, View } from 'react-native';
 import { AppScreen } from '@/components/ui/app-screen';
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/data-state';
 import { NativeActionButton } from '@/components/ui/native-action-button';
+import { PageIntro } from '@/components/ui/page-intro';
 import { SectionCard } from '@/components/ui/section-card';
 import { StatusPill } from '@/components/ui/status-pill';
 import { appSpacing, useAppTheme } from '@/constants/app-theme';
@@ -50,6 +51,11 @@ export function NotificationsScreen() {
       contentContainerStyle={{ paddingTop: appSpacing.xl }}
       refreshing={notifications.isFetching}
       onRefresh={() => void notifications.refetch()}>
+      <PageIntro
+        eyebrow="Notifications"
+        title="通知"
+        description="シフト公開、変更、ヘルプ募集などの更新を確認します。"
+      />
       <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
         <Text selectable style={{ color: theme.textSecondary, fontSize: 14 }}>
           新着順

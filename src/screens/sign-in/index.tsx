@@ -6,8 +6,10 @@ import {
   ScrollView,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { NativeActionButton } from '@/components/ui/native-action-button';
 import { SectionCard } from '@/components/ui/section-card';
@@ -18,6 +20,8 @@ import { supabase } from '@/lib/supabase';
 export function SignInScreen() {
   const router = useRouter();
   const theme = useAppTheme();
+  const { height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -51,28 +55,70 @@ export function SignInScreen() {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           flexGrow: 1,
+          minHeight: Math.max(0, height - insets.top - insets.bottom),
           justifyContent: 'center',
-          paddingHorizontal: appSpacing.xxl,
-          paddingVertical: 64,
+          paddingHorizontal: appSpacing.xl,
+          paddingTop: appSpacing.xxl,
+          paddingBottom: appSpacing.xxl,
           gap: appSpacing.xxl,
         }}>
-        <View style={{ alignItems: 'center', gap: appSpacing.lg }}>
-          <Image
-            source={require('@/assets/images/brand/dmise-logo.png')}
-            contentFit="contain"
-            style={{ width: 104, height: 104 }}
-          />
-          <View style={{ alignItems: 'center', gap: appSpacing.xs }}>
-            <Text selectable style={{ color: theme.text, fontSize: 30, fontWeight: '700' }}>
-              {env.appName}
+        <View style={{ gap: appSpacing.xl }}>
+          <View
+            style={{
+              alignSelf: 'flex-start',
+              width: 52,
+              height: 52,
+              padding: 4,
+              borderRadius: appRadii.md,
+              borderCurve: 'continuous',
+              backgroundColor: theme.brandSoft,
+              borderWidth: 1,
+              borderColor: theme.brandSoft,
+            }}>
+            <Image
+              source={require('@/assets/images/brand/dmise-logo.png')}
+              contentFit="contain"
+              style={{ width: '100%', height: '100%' }}
+            />
+          </View>
+          <View style={{ gap: appSpacing.sm }}>
+            <Text
+              selectable
+              style={{
+                color: theme.brandStrong,
+                fontSize: 12,
+                fontWeight: '900',
+                letterSpacing: 2.4,
+                textTransform: 'uppercase',
+              }}>
+              Welcome back
             </Text>
-            <Text selectable style={{ color: theme.textSecondary, fontSize: 15 }}>
-              スタッフアカウントでログイン
+            <Text
+              selectable
+              style={{
+                color: theme.text,
+                fontSize: 32,
+                fontWeight: '900',
+                letterSpacing: -1,
+              }}>
+              ログイン / SIGN IN
+            </Text>
+            <Text
+              selectable
+              style={{ color: theme.textSecondary, fontSize: 14, lineHeight: 22 }}>
+              既存の{env.appName}アカウントでログインし、シフト・打刻・通知を確認します。
             </Text>
           </View>
         </View>
 
-        <SectionCard style={{ gap: appSpacing.lg }}>
+        <SectionCard
+          style={{
+            padding: appSpacing.xl,
+            gap: appSpacing.xl,
+            borderColor: 'rgba(255,255,255,0.8)',
+            borderRadius: appRadii.xl,
+            boxShadow: '0 18px 48px rgba(15, 23, 42, 0.12)',
+          }}>
           <View style={{ gap: appSpacing.sm }}>
             <Text selectable style={{ color: theme.text, fontSize: 14, fontWeight: '700' }}>
               メールアドレス
@@ -90,9 +136,11 @@ export function SignInScreen() {
                 minHeight: 50,
                 paddingHorizontal: appSpacing.lg,
                 color: theme.text,
-                backgroundColor: theme.surfaceMuted,
+                backgroundColor: theme.surface,
                 borderRadius: appRadii.md,
                 borderCurve: 'continuous',
+                borderWidth: 1,
+                borderColor: theme.borderSoft,
                 fontSize: 16,
               }}
             />
@@ -116,9 +164,11 @@ export function SignInScreen() {
                 minHeight: 50,
                 paddingHorizontal: appSpacing.lg,
                 color: theme.text,
-                backgroundColor: theme.surfaceMuted,
+                backgroundColor: theme.surface,
                 borderRadius: appRadii.md,
                 borderCurve: 'continuous',
+                borderWidth: 1,
+                borderColor: theme.borderSoft,
                 fontSize: 16,
               }}
             />
@@ -132,6 +182,7 @@ export function SignInScreen() {
 
           <NativeActionButton
             label={isSubmitting ? 'ログイン中…' : 'ログイン'}
+            tone="dark"
             disabled={
               isSubmitting ||
               !isSupabaseConfigured ||

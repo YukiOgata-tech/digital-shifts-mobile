@@ -23,9 +23,14 @@ export function SectionCard({ children, style, tone = 'default' }: SectionCardPr
           borderRadius: appRadii.lg,
           borderCurve: 'continuous',
           backgroundColor,
-          borderWidth: tone === 'default' ? 1 : 0,
-          borderColor: theme.border,
-          boxShadow: '0 6px 22px rgba(21, 47, 32, 0.06)',
+          borderWidth: 1,
+          borderColor:
+            tone === 'brand'
+              ? theme.brandSoft
+              : tone === 'warning'
+                ? theme.warningSoft
+                : theme.border,
+          boxShadow: '0 8px 24px rgba(15, 23, 42, 0.10)',
         },
         style,
       ]}>

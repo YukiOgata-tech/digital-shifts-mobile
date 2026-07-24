@@ -35,10 +35,11 @@ export function AppScreen({
       style={{ flex: 1, backgroundColor: theme.background }}
       contentContainerStyle={[
         {
-          paddingHorizontal: appSpacing.xl,
-          paddingTop: appSpacing.md,
-          paddingBottom: 120,
-          gap: appSpacing.xl,
+          flexGrow: 1,
+          justifyContent: 'center',
+          paddingHorizontal: appSpacing.md,
+          paddingVertical: appSpacing.md,
+          gap: appSpacing.md,
         },
         contentContainerStyle,
       ]}>

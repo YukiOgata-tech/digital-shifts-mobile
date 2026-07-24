@@ -8,9 +8,7 @@ export default function HomeLayout() {
   return (
     <Stack
       screenOptions={{
-        headerLargeTitle: true,
-        headerShadowVisible: false,
-        headerLargeStyle: { backgroundColor: theme.background },
+        headerShown: false,
         contentStyle: { backgroundColor: theme.background },
       }}>
       <Stack.Screen name="index" options={{ title: 'ホーム' }} />

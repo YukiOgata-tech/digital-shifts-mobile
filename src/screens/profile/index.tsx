@@ -8,6 +8,7 @@ import { AppScreen } from '@/components/ui/app-screen';
 import { ErrorState, LoadingState } from '@/components/ui/data-state';
 import { ListRow } from '@/components/ui/list-row';
 import { NativeActionButton } from '@/components/ui/native-action-button';
+import { PageIntro } from '@/components/ui/page-intro';
 import { SectionCard } from '@/components/ui/section-card';
 import { StatusPill } from '@/components/ui/status-pill';
 import { appRadii, appSpacing, useAppTheme } from '@/constants/app-theme';
@@ -137,22 +138,70 @@ export function ProfileScreen() {
         void preferences.refetch();
         void pushStatus.refetch();
       }}>
-      <SectionCard tone="brand">
-        <Text selectable style={{ color: theme.text, fontSize: 22, fontWeight: '700' }}>
-          {staff.profile?.displayName ?? 'スタッフ'}
-        </Text>
-        <Text selectable style={{ color: theme.textSecondary, fontSize: 14 }}>
-          {staff.profile?.email}
-        </Text>
-        <Text selectable style={{ color: theme.textSecondary, fontSize: 13 }}>
-          {staff.activeTenant?.name} · {staff.activeStore?.name ?? '店舗未選択'}
-        </Text>
-      </SectionCard>
+      <PageIntro
+        eyebrow="Settings"
+        title="設定"
+        description="アカウント、所属店舗、通知とアプリの利用設定を管理します。"
+      />
 
+      <View
+        style={{
+          padding: appSpacing.lg,
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: appSpacing.md,
+          borderRadius: appRadii.lg,
+          borderCurve: 'continuous',
+          backgroundColor: theme.hero,
+          boxShadow: '0 14px 32px rgba(2, 6, 23, 0.22)',
+        }}>
+        <View
+          style={{
+            width: 54,
+            height: 54,
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: appRadii.pill,
+            backgroundColor: theme.brandBright,
+          }}>
+          <Text style={{ color: theme.hero, fontSize: 22, fontWeight: '900' }}>
+            {(staff.profile?.displayName ?? staff.profile?.email ?? 'ス').slice(0, 1)}
+          </Text>
+        </View>
+        <View style={{ flex: 1, gap: 3 }}>
+          <Text
+            selectable
+            numberOfLines={1}
+            style={{ color: theme.heroText, fontSize: 18, fontWeight: '900' }}>
+            {staff.profile?.displayName ?? 'スタッフ'}
+          </Text>
+          <Text
+            selectable
+            numberOfLines={1}
+            style={{ color: theme.heroMuted, fontSize: 12 }}>
+            {staff.profile?.email}
+          </Text>
+          <Text
+            selectable
+            numberOfLines={1}
+            style={{ color: theme.brandBright, fontSize: 11, fontWeight: '800' }}>
+            {staff.activeTenant?.role ?? 'staff'} · {staff.activeTenant?.name}
+          </Text>
+        </View>
+        <StatusPill
+          label={
+            staff.activeTenant?.role === 'owner'
+              ? 'オーナー'
+              : staff.activeTenant?.role === 'manager'
+                ? '管理者'
+                : 'スタッフ'
+          }
+          tone="brand"
+        />
+      </View>
+
+      <SettingsGroupHeading eyebrow="Account" title="プロフィール" />
       <SectionCard>
-        <Text selectable style={{ color: theme.text, fontSize: 16, fontWeight: '700' }}>
-          プロフィール
-        </Text>
         <View style={{ gap: appSpacing.sm }}>
           <Text selectable style={{ color: theme.textSecondary, fontSize: 13 }}>
             表示名
@@ -226,9 +275,7 @@ export function ProfileScreen() {
 
       {staff.tenants.length > 1 ? (
         <View style={{ gap: appSpacing.sm }}>
-          <Text selectable style={{ color: theme.text, fontSize: 16, fontWeight: '700' }}>
-            利用する組織
-          </Text>
+          <SettingsGroupHeading eyebrow="Organization" title="利用する組織" />
           {staff.tenants.map((tenant) => (
             <ListRow
               key={tenant.id}
@@ -247,9 +294,7 @@ export function ProfileScreen() {
 
       {staff.stores.length > 1 ? (
         <View style={{ gap: appSpacing.sm }}>
-          <Text selectable style={{ color: theme.text, fontSize: 16, fontWeight: '700' }}>
-            利用する店舗
-          </Text>
+          <SettingsGroupHeading eyebrow="Stores" title="利用する店舗" />
           {staff.stores.map((store) => (
             <ListRow
               key={store.id}
@@ -267,6 +312,7 @@ export function ProfileScreen() {
       ) : null}
 
       <View style={{ gap: appSpacing.sm }}>
+        <SettingsGroupHeading eyebrow="Notifications" title="通知設定" />
         <ListRow
           title="アプリ内通知"
           subtitle="シフト公開、申請結果などを通知一覧に表示"
@@ -343,6 +389,7 @@ export function ProfileScreen() {
       </View>
 
       <View style={{ gap: appSpacing.sm }}>
+        <SettingsGroupHeading eyebrow="Support & legal" title="サポート" />
         <ListRow title="ヘルプセンター" onPress={() => void openWebPath('/help', 'ヘルプセンター')} />
         <ListRow title="利用規約" onPress={() => void openWebPath('/terms', '利用規約')} />
         <ListRow
@@ -351,7 +398,35 @@ export function ProfileScreen() {
         />
       </View>
 
-      <NativeActionButton label="ログアウト" variant="outlined" onPress={() => void signOut()} />
+      <NativeActionButton
+        label="ログアウト"
+        variant="outlined"
+        tone="danger"
+        onPress={() => void signOut()}
+      />
     </AppScreen>
+  );
+}
+
+function SettingsGroupHeading({ eyebrow, title }: { eyebrow: string; title: string }) {
+  const theme = useAppTheme();
+
+  return (
+    <View style={{ gap: 2, paddingHorizontal: appSpacing.xs }}>
+      <Text
+        selectable
+        style={{
+          color: theme.brandStrong,
+          fontSize: 9,
+          fontWeight: '900',
+          letterSpacing: 1.5,
+          textTransform: 'uppercase',
+        }}>
+        {eyebrow}
+      </Text>
+      <Text selectable style={{ color: theme.text, fontSize: 18, fontWeight: '900' }}>
+        {title}
+      </Text>
+    </View>
   );
 }

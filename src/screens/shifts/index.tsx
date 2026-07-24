@@ -8,8 +8,9 @@ import { AppScreen } from '@/components/ui/app-screen';
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/data-state';
 import { NativeActionButton } from '@/components/ui/native-action-button';
 import { SectionCard } from '@/components/ui/section-card';
+import { StaffHeroCard } from '@/components/ui/staff-hero-card';
 import { StatusPill } from '@/components/ui/status-pill';
-import { appSpacing, useAppTheme } from '@/constants/app-theme';
+import { appRadii, appSpacing, useAppTheme } from '@/constants/app-theme';
 import { formatDateLabel, formatDateTime, formatTime, toDateKey } from '@/features/staff/date';
 import { useAssignments, useOpenShiftPeriods } from '@/features/staff/queries';
 
@@ -21,6 +22,14 @@ export function ShiftsScreen() {
   const [selectedIndex, setSelectedIndex] = useState(0);
   const periods = useOpenShiftPeriods();
   const assignments = useAssignments(31, 93);
+  const upcoming =
+    assignments.data?.filter((item) => item.workDate >= toDateKey(new Date())) ?? [];
+  const nextShift = upcoming[0];
+  const upcomingMinutes = upcoming.reduce((total, item) => {
+    const start = new Date(item.startAt).getTime();
+    const end = new Date(item.endAt).getTime();
+    return total + Math.max(0, (end - start) / 60_000 - item.breakMinutes);
+  }, 0);
   const isLoading = selectedIndex === 0 ? periods.isLoading : assignments.isLoading;
   const error = selectedIndex === 0 ? periods.error : assignments.error;
   const refetch = selectedIndex === 0 ? periods.refetch : assignments.refetch;
@@ -34,6 +43,74 @@ export function ShiftsScreen() {
     <AppScreen
       refreshing={selectedIndex === 0 ? periods.isFetching : assignments.isFetching}
       onRefresh={() => void refetch()}>
+      <StaffHeroCard eyebrow="My schedule" title="シフト">
+        <View
+          style={{
+            padding: appSpacing.lg,
+            gap: appSpacing.sm,
+            borderRadius: appRadii.lg,
+            borderCurve: 'continuous',
+            backgroundColor: 'rgba(255,255,255,0.09)',
+            borderWidth: 1,
+            borderColor: 'rgba(255,255,255,0.12)',
+          }}>
+          <Text
+            selectable
+            style={{
+              color: theme.brandBright,
+              fontSize: 10,
+              fontWeight: '900',
+              letterSpacing: 1.4,
+              textTransform: 'uppercase',
+            }}>
+            次の勤務
+          </Text>
+          {nextShift ? (
+            <>
+              <Text selectable style={{ color: theme.heroMuted, fontSize: 14, fontWeight: '800' }}>
+                {formatDateLabel(`${nextShift.workDate}T00:00:00+09:00`)}
+              </Text>
+              <Text
+                selectable
+                style={{
+                  color: theme.heroText,
+                  fontSize: 32,
+                  fontWeight: '900',
+                  letterSpacing: -0.8,
+                  fontVariant: ['tabular-nums'],
+                }}>
+                {formatTime(nextShift.startAt)}
+                <Text style={{ color: 'rgba(255,255,255,0.42)', fontSize: 22 }}> - </Text>
+                {formatTime(nextShift.endAt)}
+              </Text>
+              <Text selectable style={{ color: theme.heroMuted, fontSize: 13 }}>
+                {nextShift.storeName}
+                {nextShift.roleLabel ? ` · ${nextShift.roleLabel}` : ''}
+              </Text>
+            </>
+          ) : (
+            <Text selectable style={{ color: theme.heroMuted, fontSize: 14, fontWeight: '700' }}>
+              今後の公開シフトはありません
+            </Text>
+          )}
+        </View>
+        <View
+          style={{
+            flexDirection: 'row',
+            marginHorizontal: -appSpacing.lg,
+            marginBottom: -appSpacing.lg,
+            borderTopWidth: 1,
+            borderTopColor: 'rgba(255,255,255,0.10)',
+          }}>
+          <HeroMetric label="今後" value={`${upcoming.length}件`} />
+          <HeroMetric label="勤務時間" value={`${Math.round(upcomingMinutes / 60)}h`} />
+          <HeroMetric
+            label="店舗"
+            value={`${new Set(upcoming.map((item) => item.storeId)).size}件`}
+          />
+        </View>
+      </StaffHeroCard>
+
       <SegmentedControl
         selectedIndex={selectedIndex}
         values={segments}
@@ -96,9 +173,7 @@ export function ShiftsScreen() {
       {!isLoading && !error && selectedIndex === 1 ? (
         assignments.data?.length ? (
           <View style={{ gap: appSpacing.md }}>
-            {assignments.data
-              .filter((item) => item.workDate >= toDateKey(new Date()))
-              .map((item) => (
+            {upcoming.map((item) => (
                 <SectionCard key={item.id}>
                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: appSpacing.lg }}>
                     <View style={{ width: 92, gap: 3 }}>
@@ -114,7 +189,7 @@ export function ShiftsScreen() {
                         style={{
                           color: theme.text,
                           fontSize: 18,
-                          fontWeight: '700',
+                          fontWeight: '900',
                           fontVariant: ['tabular-nums'],
                         }}>
                         {formatTime(item.startAt)}–{formatTime(item.endAt)}
@@ -134,5 +209,26 @@ export function ShiftsScreen() {
         )
       ) : null}
     </AppScreen>
+  );
+}
+
+function HeroMetric({ label, value }: { label: string; value: string }) {
+  const theme = useAppTheme();
+
+  return (
+    <View
+      style={{
+        flex: 1,
+        alignItems: 'center',
+        paddingHorizontal: appSpacing.xs,
+        paddingTop: appSpacing.md,
+      }}>
+      <Text selectable style={{ color: theme.heroMuted, fontSize: 10, fontWeight: '800' }}>
+        {label}
+      </Text>
+      <Text selectable style={{ color: theme.heroText, fontSize: 16, fontWeight: '900' }}>
+        {value}
+      </Text>
+    </View>
   );
 }

@@ -1,10 +1,13 @@
+import { Image } from 'expo-image';
+import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { Alert, Text, TextInput, View } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { Alert, Pressable, Text, TextInput, View } from 'react-native';
 
 import { AppScreen } from '@/components/ui/app-screen';
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/data-state';
 import { NativeActionButton } from '@/components/ui/native-action-button';
+import { PageIntro } from '@/components/ui/page-intro';
 import { SectionCard } from '@/components/ui/section-card';
 import { SectionHeading } from '@/components/ui/section-heading';
 import { StatusPill } from '@/components/ui/status-pill';
@@ -31,6 +34,15 @@ export function AttendanceScreen() {
   const assignments = useAssignments(1, 1);
   const recordEvent = useRecordAttendanceEvent();
   const [reason, setReason] = useState('');
+  const [locationIssue, setLocationIssue] = useState<AttendanceLocationEvidence['status'] | null>(
+    null,
+  );
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1_000);
+    return () => clearInterval(timer);
+  }, []);
 
   const attendanceState: AttendanceState = useMemo(() => {
     if (!record.data) return 'not-started';
@@ -48,8 +60,9 @@ export function AttendanceScreen() {
   const currentTime = new Intl.DateTimeFormat('ja-JP', {
     hour: '2-digit',
     minute: '2-digit',
+    second: '2-digit',
     hour12: false,
-  }).format(new Date());
+  }).format(now);
 
   if (staff.isLoading || record.isLoading) {
     return (
@@ -85,12 +98,14 @@ export function AttendanceScreen() {
       : { status: 'unavailable' };
 
     if (requiresLocation && location.status !== 'ok' && !reason.trim()) {
+      setLocationIssue(location.status);
       Alert.alert(
         '理由を入力してください',
         '位置情報を確認できない場合は、画面下の理由欄への入力が必要です。',
       );
       return;
     }
+    if (location.status === 'ok') setLocationIssue(null);
 
     recordEvent.mutate(
       {
@@ -125,44 +140,87 @@ export function AttendanceScreen() {
         void record.refetch();
         void assignments.refetch();
       }}>
-      <SectionCard style={{ alignItems: 'center', paddingVertical: appSpacing.xxxl }}>
-        <StatusPill label={status.label} tone={status.tone} />
-        <Text
-          selectable
-          style={{
-            color: theme.text,
-            fontSize: 52,
-            fontWeight: '300',
-            fontVariant: ['tabular-nums'],
-            letterSpacing: -1,
-          }}>
-          {currentTime}
-        </Text>
-        <Text selectable style={{ color: theme.textSecondary, fontSize: 14 }}>
-          {formatDateLabel(new Date(), { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' })}
-        </Text>
-        <Text selectable style={{ color: theme.text, fontSize: 16, fontWeight: '600' }}>
-          {staff.activeStore.name}
-        </Text>
-      </SectionCard>
+      <PageIntro
+        eyebrow="Attendance"
+        title="打刻"
+        description={`${staff.activeStore.name}${
+          staff.activeStore.code ? ` · 店舗コード ${staff.activeStore.code}` : ''
+        }`}
+        trailing={<StatusPill label={status.label} tone={status.tone} />}
+      />
 
-      <SectionCard tone="brand">
+      <AttendanceProgress state={attendanceState} />
+
+      <SectionCard
+        style={{
+          overflow: 'hidden',
+          padding: 0,
+          gap: 0,
+          borderColor: '#94A3B8',
+          boxShadow: '0 14px 34px rgba(15, 23, 42, 0.14)',
+        }}>
         <View
           style={{
+            width: '100%',
+            alignItems: 'center',
+            paddingHorizontal: appSpacing.lg,
+            paddingVertical: appSpacing.xxl,
+            gap: appSpacing.xs,
+            backgroundColor: theme.hero,
+          }}>
+          <Text
+            selectable
+            style={{
+              color: theme.brandBright,
+              fontSize: 10,
+              fontWeight: '900',
+              letterSpacing: 1.8,
+              textTransform: 'uppercase',
+            }}>
+            Current time
+          </Text>
+          <Text
+            selectable
+            style={{
+              color: theme.heroText,
+              fontSize: 48,
+              fontWeight: '900',
+              fontVariant: ['tabular-nums'],
+              letterSpacing: -1.8,
+            }}>
+            {currentTime}
+          </Text>
+          <Text selectable style={{ color: theme.heroMuted, fontSize: 14, fontWeight: '700' }}>
+            {formatDateLabel(now, {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+              weekday: 'long',
+            })}
+          </Text>
+        </View>
+
+        <View
+          style={{
+            width: '100%',
+            padding: appSpacing.lg,
             flexDirection: 'row',
             justifyContent: 'space-between',
             alignItems: 'center',
+            gap: appSpacing.md,
           }}>
-          <View style={{ flex: 1, gap: appSpacing.xs }}>
-            <Text selectable style={{ color: theme.brandStrong, fontSize: 13, fontWeight: '700' }}>
+          <View style={{ flex: 1, gap: 3 }}>
+            <Text
+              selectable
+              style={{ color: theme.textSecondary, fontSize: 11, fontWeight: '900' }}>
               本日の予定
             </Text>
             <Text
               selectable
               style={{
                 color: theme.text,
-                fontSize: 24,
-                fontWeight: '700',
+                fontSize: 20,
+                fontWeight: '900',
                 fontVariant: ['tabular-nums'],
               }}>
               {todayShift
@@ -171,74 +229,128 @@ export function AttendanceScreen() {
             </Text>
           </View>
           {todayShift?.roleLabel ? (
-            <Text selectable style={{ color: theme.textSecondary, fontSize: 14 }}>
-              {todayShift.roleLabel}
-            </Text>
+            <StatusPill label={todayShift.roleLabel} tone="brand" />
           ) : null}
         </View>
-      </SectionCard>
 
-      <View style={{ gap: appSpacing.md }}>
-        {attendanceState === 'not-started' || attendanceState === 'finished' ? (
-          <NativeActionButton
-            label={recordEvent.isPending ? '位置を確認中…' : '出勤する'}
-            haptic="success"
-            disabled={recordEvent.isPending}
-            onPress={() => void submit('clock_in')}
-          />
-        ) : null}
+        <View
+          style={{
+            width: '100%',
+            paddingHorizontal: appSpacing.lg,
+            paddingBottom: appSpacing.lg,
+            flexDirection: 'row',
+            gap: appSpacing.sm,
+          }}>
+          {attendanceState === 'not-started' || attendanceState === 'finished' ? (
+            <>
+              <AttendanceActionButton
+                label={recordEvent.isPending ? '確認中…' : '出勤'}
+                englishLabel="CLOCK IN"
+                icon="sf:arrow.right.circle.fill"
+                disabled={recordEvent.isPending}
+                onPress={() => void submit('clock_in')}
+              />
+              <AttendanceActionButton
+                label="退勤"
+                englishLabel="CLOCK OUT"
+                icon="sf:arrow.left.circle"
+                disabled
+                tone="danger"
+                onPress={() => {}}
+              />
+            </>
+          ) : null}
+          {attendanceState === 'working' ? (
+            <>
+              <AttendanceActionButton
+                label="出勤済み"
+                englishLabel="CLOCKED IN"
+                icon="sf:checkmark.circle.fill"
+                disabled
+                onPress={() => {}}
+              />
+              <AttendanceActionButton
+                label={recordEvent.isPending ? '確認中…' : '退勤'}
+                englishLabel="CLOCK OUT"
+                icon="sf:arrow.left.circle.fill"
+                tone="danger"
+                disabled={recordEvent.isPending}
+                onPress={() => void submit('clock_out')}
+              />
+            </>
+          ) : null}
+          {attendanceState === 'on-break' ? (
+            <AttendanceActionButton
+                label="休憩を終了"
+                englishLabel="BACK TO WORK"
+                icon="sf:play.circle.fill"
+                disabled={recordEvent.isPending}
+                onPress={() => void submit('break_end')}
+              />
+          ) : null}
+        </View>
+
         {attendanceState === 'working' ? (
-          <>
+          <View style={{ width: '100%', paddingHorizontal: appSpacing.lg }}>
             <NativeActionButton
               label="休憩を開始"
+              variant="outlined"
               disabled={recordEvent.isPending}
               onPress={() => void submit('break_start')}
             />
-            <NativeActionButton
-              label={recordEvent.isPending ? '位置を確認中…' : '退勤する'}
-              variant="outlined"
-              haptic="success"
-              disabled={recordEvent.isPending}
-              onPress={() => void submit('clock_out')}
-            />
-          </>
+          </View>
         ) : null}
-        {attendanceState === 'on-break' ? (
-          <NativeActionButton
-            label="休憩を終了"
-            haptic="success"
-            disabled={recordEvent.isPending}
-            onPress={() => void submit('break_end')}
-          />
-        ) : null}
-      </View>
 
-      <View style={{ gap: appSpacing.md }}>
-        <SectionHeading title="位置情報を取得できない場合" />
-        <TextInput
-          value={reason}
-          onChangeText={setReason}
-          maxLength={500}
-          multiline
-          placeholder="例: 店舗内ですが端末の位置情報を取得できません"
-          placeholderTextColor={theme.textSecondary}
+        <View
           style={{
-            minHeight: 88,
+            width: '100%',
+            flexDirection: 'row',
+            justifyContent: 'space-between',
+            alignItems: 'center',
             padding: appSpacing.lg,
-            borderRadius: appRadii.md,
-            borderCurve: 'continuous',
-            borderWidth: 1,
-            borderColor: theme.border,
-            backgroundColor: theme.surface,
-            color: theme.text,
-            fontSize: 15,
-            textAlignVertical: 'top',
-          }}
-        />
-        <Text selectable style={{ color: theme.textSecondary, fontSize: 13, lineHeight: 19 }}>
-          位置情報は出勤・退勤ボタンを押した時だけ取得します。範囲外や取得不可の打刻は、理由とともに管理者の確認対象になります。
-        </Text>
-      </View>
+            borderTopWidth: 1,
+            borderTopColor: theme.borderSoft,
+          }}>
+          <View style={{ gap: 2 }}>
+            <Text selectable style={{ color: theme.brandStrong, fontSize: 13, fontWeight: '900' }}>
+              位置情報を使用
+            </Text>
+            <Text selectable style={{ color: theme.textSecondary, fontSize: 11 }}>
+              出勤・退勤を押した時だけ取得
+            </Text>
+          </View>
+          <Text style={{ color: theme.brand, fontSize: 20, fontWeight: '900' }}>✓</Text>
+        </View>
+      </SectionCard>
+
+      {locationIssue ? (
+        <SectionCard tone="warning">
+          <SectionHeading title="例外打刻の理由" />
+          <Text selectable style={{ color: theme.warning, fontSize: 13, lineHeight: 19 }}>
+            位置情報を確認できませんでした。理由を入力して、もう一度打刻してください。
+          </Text>
+          <TextInput
+            value={reason}
+            onChangeText={setReason}
+            maxLength={500}
+            multiline
+            placeholder="例: 店舗内ですが端末の位置情報を取得できません"
+            placeholderTextColor={theme.textSecondary}
+            style={{
+              minHeight: 88,
+              padding: appSpacing.lg,
+              borderRadius: appRadii.md,
+              borderCurve: 'continuous',
+              borderWidth: 1,
+              borderColor: '#FCD34D',
+              backgroundColor: theme.surface,
+              color: theme.text,
+              fontSize: 15,
+              textAlignVertical: 'top',
+            }}
+          />
+        </SectionCard>
+      ) : null}
 
       {record.data?.reviewStatus === 'needs_review' ? (
         <SectionCard tone="warning">
@@ -259,5 +371,151 @@ export function AttendanceScreen() {
         onPress={() => router.push('/attendance-adjustment')}
       />
     </AppScreen>
+  );
+}
+
+function AttendanceActionButton({
+  label,
+  englishLabel,
+  icon,
+  tone = 'brand',
+  disabled = false,
+  onPress,
+}: {
+  label: string;
+  englishLabel: string;
+  icon: `sf:${string}`;
+  tone?: 'brand' | 'danger';
+  disabled?: boolean;
+  onPress: () => void;
+}) {
+  const theme = useAppTheme();
+  const foreground = tone === 'danger' ? theme.danger : theme.brandStrong;
+  const background = tone === 'danger' ? theme.dangerSoft : theme.brandSoft;
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      disabled={disabled}
+      onPress={() => {
+        if (process.env.EXPO_OS === 'ios') {
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        }
+        onPress();
+      }}
+      style={({ pressed }) => ({
+        flex: 1,
+        minHeight: 82,
+        padding: appSpacing.md,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: appSpacing.sm,
+        borderRadius: appRadii.lg,
+        borderCurve: 'continuous',
+        borderWidth: 2,
+        borderColor: disabled ? theme.borderSoft : foreground,
+        backgroundColor: disabled ? theme.surfaceMuted : background,
+        opacity: pressed ? 0.72 : disabled ? 0.58 : 1,
+      })}>
+      {process.env.EXPO_OS === 'ios' ? (
+        <Image
+          source={icon}
+          tintColor={disabled ? theme.textSecondary : foreground}
+          style={{ width: 28, height: 28 }}
+        />
+      ) : (
+        <Text style={{ color: disabled ? theme.textSecondary : foreground, fontSize: 24 }}>→</Text>
+      )}
+      <View style={{ gap: 1 }}>
+        <Text
+          style={{
+            color: disabled ? theme.textSecondary : theme.text,
+            fontSize: 17,
+            fontWeight: '900',
+          }}>
+          {label}
+        </Text>
+        <Text
+          style={{
+            color: disabled ? theme.textSecondary : foreground,
+            fontSize: 10,
+            fontWeight: '900',
+            letterSpacing: 0.5,
+          }}>
+          {englishLabel}
+        </Text>
+      </View>
+    </Pressable>
+  );
+}
+
+function AttendanceProgress({ state }: { state: AttendanceState }) {
+  const theme = useAppTheme();
+  const currentStep = state === 'not-started' ? 2 : state === 'working' || state === 'on-break' ? 3 : 4;
+  const steps = ['店舗', '位置情報', '打刻', '完了'];
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 2 }}>
+      {steps.map((label, index) => {
+        const step = index + 1;
+        const active = step <= currentStep;
+        return (
+          <View key={label} style={{ flex: 1, alignItems: 'center' }}>
+            <View style={{ width: '100%', flexDirection: 'row', alignItems: 'center' }}>
+              <View
+                style={{
+                  flex: 1,
+                  height: 2,
+                  backgroundColor: index === 0 ? 'transparent' : active ? theme.brand : theme.border,
+                }}
+              />
+              <View
+                style={{
+                  width: 28,
+                  height: 28,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: 14,
+                  borderWidth: 2,
+                  borderColor: active ? theme.brand : theme.border,
+                  backgroundColor: active ? theme.brandSoft : theme.surface,
+                }}>
+                <Text
+                  style={{
+                    color: active ? theme.brandStrong : theme.textSecondary,
+                    fontSize: 11,
+                    fontWeight: '900',
+                  }}>
+                  {step}
+                </Text>
+              </View>
+              <View
+                style={{
+                  flex: 1,
+                  height: 2,
+                  backgroundColor:
+                    index === steps.length - 1
+                      ? 'transparent'
+                      : step < currentStep
+                        ? theme.brand
+                        : theme.border,
+                }}
+              />
+            </View>
+            <Text
+              selectable
+              style={{
+                marginTop: 5,
+                color: active ? theme.text : theme.textSecondary,
+                fontSize: 10,
+                fontWeight: '800',
+              }}>
+              {label}
+            </Text>
+          </View>
+        );
+      })}
+    </View>
   );
 }

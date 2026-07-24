@@ -8,6 +8,7 @@ type NativeActionButtonProps = {
   label: string;
   onPress: () => void;
   variant?: 'filled' | 'outlined' | 'text';
+  tone?: 'brand' | 'dark' | 'danger';
   disabled?: boolean;
   haptic?: 'selection' | 'success';
 };
@@ -16,10 +17,13 @@ export function NativeActionButton({
   label,
   onPress,
   variant = 'filled',
+  tone = 'brand',
   disabled = false,
   haptic = 'selection',
 }: NativeActionButtonProps) {
   const theme = useAppTheme();
+  const seedColor =
+    tone === 'dark' ? theme.hero : tone === 'danger' ? theme.danger : theme.brand;
 
   const handlePress = () => {
     if (process.env.EXPO_OS === 'ios') {
@@ -34,7 +38,7 @@ export function NativeActionButton({
 
   return (
     <View style={{ minHeight: 48 }}>
-      <Host matchContents seedColor={theme.brand} style={{ minHeight: 48 }}>
+      <Host matchContents seedColor={seedColor} style={{ minHeight: 48 }}>
         <Button
           disabled={disabled}
           label={label}
