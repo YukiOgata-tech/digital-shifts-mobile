@@ -1,18 +1,21 @@
-import { ActivityIndicator, Text, View } from 'react-native';
+import { Text, View } from 'react-native';
 
 import { appSpacing, useAppTheme } from '@/constants/app-theme';
 
+import { LoadingIndicator } from './loading-indicator';
 import { NativeActionButton } from './native-action-button';
 import { SectionCard } from './section-card';
 
 export function LoadingState({ label = '読み込み中…' }: { label?: string }) {
-  const theme = useAppTheme();
   return (
-    <View style={{ alignItems: 'center', gap: appSpacing.md, paddingVertical: appSpacing.xxl }}>
-      <ActivityIndicator color={theme.brand} />
-      <Text selectable style={{ color: theme.textSecondary, fontSize: 14 }}>
-        {label}
-      </Text>
+    <View
+      style={{
+        minHeight: 168,
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: appSpacing.xxl,
+      }}>
+      <LoadingIndicator label={label} size="large" />
     </View>
   );
 }

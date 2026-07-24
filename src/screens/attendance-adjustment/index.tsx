@@ -220,7 +220,9 @@ export function AttendanceAdjustmentScreen() {
       </SectionCard>
 
       <NativeActionButton
-        label={mutation.isPending ? '入力中…' : '勤怠を後から入力する'}
+        label="勤怠を後から入力する"
+        loading={mutation.isPending}
+        loadingLabel="入力中…"
         disabled={reason.trim().length < 5 || mutation.isPending}
         haptic="success"
         onPress={submit}

@@ -345,24 +345,37 @@ export function AttendanceDetailScreen() {
 
         {!isWorking ? (
           <ClockButton
-            label={recordEvent.isPending ? '記録中…' : '出勤を打刻する'}
+            label="出勤を打刻する"
             tone="brand"
+            loading={
+              recordEvent.isPending &&
+              recordEvent.variables?.eventType === 'clock_in'
+            }
             disabled={recordEvent.isPending || gps.status === 'checking' || !reasonComplete}
             onPress={submitClock}
           />
         ) : (
           <View style={{ flexDirection: 'row', gap: appSpacing.sm }}>
             <ClockButton
-              label={recordEvent.isPending ? '記録中…' : isOnBreak ? '休憩終了' : '休憩開始'}
+              label={isOnBreak ? '休憩終了' : '休憩開始'}
               tone="warning"
               compact
+              loading={
+                recordEvent.isPending &&
+                recordEvent.variables?.eventType ===
+                  (isOnBreak ? 'break_end' : 'break_start')
+              }
               disabled={recordEvent.isPending}
               onPress={() => submitBreak(isOnBreak ? 'break_end' : 'break_start')}
             />
             <ClockButton
-              label={recordEvent.isPending ? '記録中…' : '退勤を打刻する'}
+              label="退勤を打刻する"
               tone="danger"
               compact
+              loading={
+                recordEvent.isPending &&
+                recordEvent.variables?.eventType === 'clock_out'
+              }
               disabled={recordEvent.isPending || gps.status === 'checking' || !reasonComplete}
               onPress={submitClock}
             />
@@ -669,12 +682,14 @@ function ClockButton({
   label,
   tone,
   compact = false,
+  loading = false,
   disabled,
   onPress,
 }: {
   label: string;
   tone: 'brand' | 'danger' | 'warning';
   compact?: boolean;
+  loading?: boolean;
   disabled: boolean;
   onPress: () => void;
 }) {
@@ -683,6 +698,8 @@ function ClockButton({
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityLabel={loading ? `${label}、記録中` : label}
+      accessibilityState={{ disabled, busy: loading }}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => ({
@@ -697,9 +714,12 @@ function ClockButton({
         opacity: disabled ? 0.45 : pressed ? 0.72 : 1,
         boxShadow: `0 8px 18px ${background}44`,
       })}>
-      <Text adjustsFontSizeToFit numberOfLines={1} style={{ color: '#FFFFFF', fontSize: compact ? 14 : 19, fontWeight: '900' }}>
-        {label}
-      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: appSpacing.sm }}>
+        {loading ? <ActivityIndicator color="#FFFFFF" size="small" /> : null}
+        <Text adjustsFontSizeToFit numberOfLines={1} style={{ color: '#FFFFFF', fontSize: compact ? 14 : 19, fontWeight: '900' }}>
+          {loading ? '記録中…' : label}
+        </Text>
+      </View>
     </Pressable>
   );
 }

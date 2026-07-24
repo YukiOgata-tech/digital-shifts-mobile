@@ -31,7 +31,10 @@ export function PreferencesScreen() {
   const theme = useAppTheme();
   const staff = useStaffIdentity();
   const [preferences, setPreferences] = useState<MobilePreferences | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [savingAction, setSavingAction] = useState<
+    'defaults' | 'behavior' | 'reset-defaults' | 'reset-device' | null
+  >(null);
+  const saving = savingAction !== null;
 
   useEffect(() => {
     if (!staff.userId) return;
@@ -82,7 +85,7 @@ export function PreferencesScreen() {
     });
   };
 
-  const save = async () => {
+  const save = async (action: 'defaults' | 'behavior') => {
     if (!staff.userId) return;
     const invalidDay = preferences.defaultSchedule.find(
       (day) =>
@@ -95,7 +98,7 @@ export function PreferencesScreen() {
       Alert.alert('時刻を確認してください', '開始・終了は00:00〜23:59の形式で入力してください。');
       return;
     }
-    setSaving(true);
+    setSavingAction(action);
     try {
       await writeMobilePreferences(staff.userId, preferences);
       Alert.alert('操作・データ設定を保存しました');
@@ -105,7 +108,7 @@ export function PreferencesScreen() {
         error instanceof Error ? error.message : 'もう一度お試しください。',
       );
     } finally {
-      setSaving(false);
+      setSavingAction(null);
     }
   };
 
@@ -115,7 +118,7 @@ export function PreferencesScreen() {
       ...preferences,
       defaultSchedule: Array.from({ length: 7 }, () => null),
     };
-    setSaving(true);
+    setSavingAction('reset-defaults');
     try {
       await writeMobilePreferences(staff.userId, next);
       setPreferences(next);
@@ -126,7 +129,7 @@ export function PreferencesScreen() {
         error instanceof Error ? error.message : 'もう一度お試しください。',
       );
     } finally {
-      setSaving(false);
+      setSavingAction(null);
     }
   };
 
@@ -141,6 +144,7 @@ export function PreferencesScreen() {
           style: 'destructive',
           onPress: () => {
             if (!staff.userId) return;
+            setSavingAction('reset-device');
             void clearMobilePreferences(staff.userId)
               .then(() => {
                 setPreferences(DEFAULT_MOBILE_PREFERENCES);
@@ -148,7 +152,8 @@ export function PreferencesScreen() {
               })
               .catch((error: Error) =>
                 Alert.alert('リセットできませんでした', error.message),
-              );
+              )
+              .finally(() => setSavingAction(null));
           },
         },
       ],
@@ -205,12 +210,16 @@ export function PreferencesScreen() {
           />
         ))}
         <NativeActionButton
-          label={saving ? '保存中…' : 'デフォルトを保存'}
+          label="デフォルトを保存"
+          loading={savingAction === 'defaults'}
+          loadingLabel="保存中…"
           disabled={saving}
-          onPress={() => void save()}
+          onPress={() => void save('defaults')}
         />
         <NativeActionButton
           label="すべてリセット"
+          loading={savingAction === 'reset-defaults'}
+          loadingLabel="リセット中…"
           variant="outlined"
           tone="dark"
           disabled={saving}
@@ -238,10 +247,12 @@ export function PreferencesScreen() {
           }
         />
         <NativeActionButton
-          label={saving ? '保存中…' : '操作設定を保存'}
+          label="操作設定を保存"
+          loading={savingAction === 'behavior'}
+          loadingLabel="保存中…"
           tone="dark"
           disabled={saving}
-          onPress={() => void save()}
+          onPress={() => void save('behavior')}
         />
       </SectionCard>
 
@@ -271,8 +282,11 @@ export function PreferencesScreen() {
         </Text>
         <NativeActionButton
           label="この端末の操作設定をリセット"
+          loading={savingAction === 'reset-device'}
+          loadingLabel="リセット中…"
           variant="outlined"
           tone="dark"
+          disabled={saving}
           onPress={reset}
         />
       </SectionCard>

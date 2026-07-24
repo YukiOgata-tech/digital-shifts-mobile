@@ -2,7 +2,7 @@ import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 
 import { ShiftRequestCalendar } from '@/components/shifts/shift-request-calendar';
 import { ShiftRequestControls } from '@/components/shifts/shift-request-controls';
@@ -727,6 +727,8 @@ export function ShiftRequestScreen() {
                   ? '希望を提出する'
                   : '希望を追加する'
             }
+            loading={isBusy && !period.submittedAt}
+            loadingLabel="提出中…"
             disabled={isBusy || deadlinePassed || Boolean(period.submittedAt) || !entered.length}
             onPress={confirmSubmit}
           />
@@ -917,14 +919,18 @@ export function ShiftRequestScreen() {
 
           {!period.submittedAt && !deadlinePassed ? (
             <ActionButton
-              label={save.isPending ? '保存中…' : isDirty ? '下書きを保存' : '下書きは保存済み'}
+              label={isDirty ? '下書きを保存' : '下書きは保存済み'}
+              loading={save.isPending}
+              loadingLabel="保存中…"
               disabled={isBusy || !isDirty}
               onPress={() => void handleSave()}
             />
           ) : null}
           {period.submittedAt ? (
             <ActionButton
-              label={setSubmitted.isPending ? '更新中…' : '下書きに戻して修正'}
+              label="下書きに戻して修正"
+              loading={setSubmitted.isPending}
+              loadingLabel="更新中…"
               variant="outlinedLight"
               disabled={isBusy || deadlinePassed}
               onPress={confirmReturnToDraft}
@@ -1372,12 +1378,16 @@ function ActionButton({
   label,
   variant = 'filled',
   disabled = false,
+  loading = false,
+  loadingLabel,
   grow = false,
   onPress,
 }: {
   label: string;
   variant?: 'filled' | 'outlined' | 'outlinedLight';
   disabled?: boolean;
+  loading?: boolean;
+  loadingLabel?: string;
   grow?: boolean;
   onPress: () => void;
 }) {
@@ -1387,8 +1397,9 @@ function ActionButton({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ disabled }}
-      disabled={disabled}
+      accessibilityLabel={loading ? (loadingLabel ?? label) : label}
+      accessibilityState={{ disabled: disabled || loading }}
+      disabled={disabled || loading}
       onPress={() => {
         if (process.env.EXPO_OS === 'ios') void Haptics.selectionAsync();
         onPress();
@@ -1414,17 +1425,31 @@ function ActionButton({
         transform: [{ scale: pressed ? 0.99 : 1 }],
         boxShadow: filled ? '0 7px 18px rgba(5, 150, 105, 0.18)' : undefined,
       })}>
-      <Text
-        numberOfLines={1}
-        adjustsFontSizeToFit
-        minimumFontScale={0.78}
+      <View
         style={{
-          color: filled || light ? '#FFFFFF' : theme.text,
-          fontSize: 15,
-          fontWeight: '900',
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 8,
         }}>
-        {label}
-      </Text>
+        {loading ? (
+          <ActivityIndicator
+            color={filled || light ? '#FFFFFF' : theme.text}
+            size="small"
+          />
+        ) : null}
+        <Text
+          numberOfLines={1}
+          adjustsFontSizeToFit
+          minimumFontScale={0.78}
+          style={{
+            color: filled || light ? '#FFFFFF' : theme.text,
+            fontSize: 15,
+            fontWeight: '900',
+          }}>
+          {loading ? (loadingLabel ?? label) : label}
+        </Text>
+      </View>
     </Pressable>
   );
 }

@@ -27,7 +27,10 @@ export function ProfileScreen() {
   const [emailStep, setEmailStep] = useState<EmailStep>('input');
   const [newEmail, setNewEmail] = useState('');
   const [otp, setOtp] = useState('');
-  const [authPending, setAuthPending] = useState(false);
+  const [authAction, setAuthAction] = useState<
+    'reauthentication' | 'email-change' | 'password-reset' | null
+  >(null);
+  const authPending = authAction !== null;
 
   if (staff.isLoading) {
     return (
@@ -118,14 +121,18 @@ export function ProfileScreen() {
     );
   };
 
-  const runAuthAction = async (action: () => Promise<void>, title: string) => {
-    setAuthPending(true);
+  const runAuthAction = async (
+    action: () => Promise<void>,
+    title: string,
+    key: NonNullable<typeof authAction>,
+  ) => {
+    setAuthAction(key);
     try {
       await action();
     } catch (error) {
       Alert.alert(title, error instanceof Error ? error.message : 'もう一度お試しください。');
     } finally {
-      setAuthPending(false);
+      setAuthAction(null);
     }
   };
 
@@ -227,7 +234,9 @@ export function ProfileScreen() {
           }
         />
         <NativeActionButton
-          label={updateProfile.isPending ? '保存中…' : '保存する'}
+          label="保存する"
+          loading={updateProfile.isPending}
+          loadingLabel="保存中…"
           tone="dark"
           disabled={updateProfile.isPending || !displayName.trim()}
           onPress={() =>
@@ -265,11 +274,17 @@ export function ProfileScreen() {
               onChangeText={setNewEmail}
             />
             <NativeActionButton
-              label={authPending ? '送信中…' : '確認コードを送信'}
+              label="確認コードを送信"
+              loading={authAction === 'reauthentication'}
+              loadingLabel="送信中…"
               tone="dark"
               disabled={authPending || !newEmail.trim()}
               onPress={() =>
-                void runAuthAction(sendReauthenticationCode, '確認コードを送信できませんでした')
+                void runAuthAction(
+                  sendReauthenticationCode,
+                  '確認コードを送信できませんでした',
+                  'reauthentication',
+                )
               }
             />
           </>
@@ -297,11 +312,17 @@ export function ProfileScreen() {
               {currentEmail} → {newEmail}
             </Text>
             <NativeActionButton
-              label={authPending ? '変更中…' : 'メールアドレスを変更'}
+              label="メールアドレスを変更"
+              loading={authAction === 'email-change'}
+              loadingLabel="変更中…"
               tone="danger"
               disabled={authPending || otp.length !== 6}
               onPress={() =>
-                void runAuthAction(requestEmailChange, 'メールアドレスを変更できませんでした')
+                void runAuthAction(
+                  requestEmailChange,
+                  'メールアドレスを変更できませんでした',
+                  'email-change',
+                )
               }
             />
             <NativeActionButton
@@ -323,7 +344,9 @@ export function ProfileScreen() {
           description="パスワード再設定リンクをメールで送信します。リンク先の安全な画面で新しいパスワードを設定できます。"
         />
         <NativeActionButton
-          label={authPending ? '送信中…' : 'リセットメールを送信'}
+          label="リセットメールを送信"
+          loading={authAction === 'password-reset'}
+          loadingLabel="送信中…"
           tone="dark"
           disabled={authPending || !currentEmail}
           onPress={() =>
@@ -335,7 +358,11 @@ export function ProfileScreen() {
                 {
                   text: '送信',
                   onPress: () =>
-                    void runAuthAction(sendPasswordReset, 'メールを送信できませんでした'),
+                    void runAuthAction(
+                      sendPasswordReset,
+                      'メールを送信できませんでした',
+                      'password-reset',
+                    ),
                 },
               ],
             )

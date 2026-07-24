@@ -531,7 +531,9 @@ function AdjustmentWindowEditor({ window }: { window: ShiftAdjustmentWindow }) {
           </FieldLabel>
 
           <NativeActionButton
-            label={addEntry.isPending ? '追加中…' : '修正希望を追加'}
+            label="修正希望を追加"
+            loading={addEntry.isPending}
+            loadingLabel="追加中…"
             disabled={busy}
             onPress={() => void handleAdd()}
           />
@@ -643,7 +645,9 @@ function AdjustmentWindowEditor({ window }: { window: ShiftAdjustmentWindow }) {
 
       {editable ? (
         <NativeActionButton
-          label={submitWindow.isPending ? '提出中…' : '修正希望を提出'}
+          label="修正希望を提出"
+          loading={submitWindow.isPending}
+          loadingLabel="提出中…"
           disabled={busy || !window.entries.length}
           haptic="success"
           onPress={handleSubmit}

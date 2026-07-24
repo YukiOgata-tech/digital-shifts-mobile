@@ -176,7 +176,9 @@ export function SignInScreen() {
           ) : null}
 
           <NativeActionButton
-            label={isSubmitting ? 'ログイン中…' : 'ログイン'}
+            label="ログイン"
+            loading={isSubmitting}
+            loadingLabel="ログイン中…"
             tone="dark"
             disabled={
               isSubmitting ||

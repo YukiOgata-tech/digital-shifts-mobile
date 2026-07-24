@@ -26,11 +26,11 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#F7F3EA",
+          "backgroundColor": "#FFFFFF",
           "image": "./assets/images/brand/dmise-logo.png",
           "imageWidth": 152,
           "dark": {
-            "backgroundColor": "#0F172A",
+            "backgroundColor": "#FFFFFF",
             "image": "./assets/images/brand/dmise-logo.png"
           }
         }

@@ -3,7 +3,7 @@ import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 
 import { AppScreen } from '@/components/ui/app-screen';
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/data-state';
@@ -272,7 +272,9 @@ function AttendanceStoreCard({
               : '0 8px 18px rgba(5, 150, 105, 0.28)',
             opacity: isBusy ? 0.5 : pressed ? 0.75 : 1,
           })}>
-          {process.env.EXPO_OS === 'ios' ? (
+          {isBusy ? (
+            <ActivityIndicator color="#FFFFFF" size="small" />
+          ) : process.env.EXPO_OS === 'ios' ? (
             <SymbolView
               name={isWorking ? 'arrow.left.circle.fill' : 'rectangle.portrait.and.arrow.right'}
               tintColor="#FFFFFF"
@@ -282,7 +284,13 @@ function AttendanceStoreCard({
             <Text style={{ color: '#FFFFFF', fontSize: 20 }}>→</Text>
           )}
           <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '900' }}>
-            {isBusy ? '確認中…' : isWorking ? '退勤' : '出勤'}
+            {isCheckingLocation
+              ? '位置確認中…'
+              : recordEvent.isPending
+                ? '記録中…'
+                : isWorking
+                  ? '退勤'
+                  : '出勤'}
           </Text>
         </Pressable>
       </View>

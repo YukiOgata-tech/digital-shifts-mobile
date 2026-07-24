@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
 import { useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Pressable,
   Text,
@@ -135,6 +136,7 @@ export function StaffAppHeader() {
             icon="rectangle.portrait.and.arrow.right"
             fallbackIcon="↪"
             compact={compact}
+            loading={isSigningOut}
             disabled={isSigningOut}
             onPress={confirmSignOut}
           />
@@ -150,6 +152,7 @@ function HeaderAction({
   icon,
   fallbackIcon,
   compact,
+  loading = false,
   disabled = false,
   onPress,
 }: {
@@ -158,14 +161,15 @@ function HeaderAction({
   icon: 'clock' | 'rectangle.portrait.and.arrow.right';
   fallbackIcon: string;
   compact: boolean;
+  loading?: boolean;
   disabled?: boolean;
   onPress: () => void;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      accessibilityState={{ disabled }}
+      accessibilityLabel={loading ? 'ログアウト中' : accessibilityLabel}
+      accessibilityState={{ disabled, busy: loading }}
       disabled={disabled}
       hitSlop={4}
       onPress={onPress}
@@ -181,7 +185,9 @@ function HeaderAction({
         transform: [{ scale: pressed ? 0.96 : 1 }],
         boxShadow: `0 8px 18px ${color}33`,
       })}>
-      {process.env.EXPO_OS === 'ios' ? (
+      {loading ? (
+        <ActivityIndicator color="#FFFFFF" size="small" />
+      ) : process.env.EXPO_OS === 'ios' ? (
         <SymbolView
           name={icon}
           tintColor="#FFFFFF"

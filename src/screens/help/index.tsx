@@ -97,7 +97,12 @@ export function HelpScreen() {
               </Text>
             ) : (
               <NativeActionButton
-                label={apply.isPending ? '応募中…' : 'この募集に応募する'}
+                label="この募集に応募する"
+                loading={
+                  apply.isPending &&
+                  apply.variables?.requestId === request.id
+                }
+                loadingLabel="応募中…"
                 haptic="success"
                 disabled={apply.isPending}
                 onPress={() => confirmApply(request.id, request.title)}

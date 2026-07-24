@@ -231,7 +231,9 @@ export function NotificationSettingsScreen() {
       </View>
 
       <NativeActionButton
-        label={savePending ? '保存中…' : '通知設定を保存'}
+        label="通知設定を保存"
+        loading={savePending}
+        loadingLabel="保存中…"
         tone="dark"
         disabled={savePending}
         onPress={() => void handleSave()}

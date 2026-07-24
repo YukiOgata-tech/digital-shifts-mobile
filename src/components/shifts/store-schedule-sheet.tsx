@@ -20,7 +20,8 @@ type Props = {
 export function StoreScheduleSheet({ schedule }: Props) {
   const theme = useAppTheme();
   const viewShotRef = useRef<ViewShotRef>(null);
-  const [isExporting, setIsExporting] = useState(false);
+  const [exportAction, setExportAction] = useState<'save' | 'share' | null>(null);
+  const isExporting = exportAction !== null;
   const days = buildMonthDays(schedule.yearMonth);
   const tableWidth = NAME_COLUMN_WIDTH + days.length * DAY_COLUMN_WIDTH;
   const assignmentsByMemberDate = new Map<string, typeof schedule.assignments>();
@@ -42,7 +43,7 @@ export function StoreScheduleSheet({ schedule }: Props) {
       Alert.alert('端末用の機能です', '画像保存はiOS / Androidアプリで利用できます。');
       return;
     }
-    setIsExporting(true);
+    setExportAction('save');
     try {
       const permission = await MediaLibrary.requestPermissionsAsync(true, ['photo']);
       if (!permission.granted) {
@@ -58,12 +59,12 @@ export function StoreScheduleSheet({ schedule }: Props) {
     } catch (error) {
       Alert.alert('保存できませんでした', toErrorMessage(error));
     } finally {
-      setIsExporting(false);
+      setExportAction(null);
     }
   };
 
   const handleShare = async () => {
-    setIsExporting(true);
+    setExportAction('share');
     try {
       if (!(await Sharing.isAvailableAsync())) {
         Alert.alert('共有できません', 'この端末では共有シートを利用できません。');
@@ -78,7 +79,7 @@ export function StoreScheduleSheet({ schedule }: Props) {
     } catch (error) {
       Alert.alert('共有できませんでした', toErrorMessage(error));
     } finally {
-      setIsExporting(false);
+      setExportAction(null);
     }
   };
 
@@ -226,13 +227,17 @@ export function StoreScheduleSheet({ schedule }: Props) {
 
       <View style={{ gap: appSpacing.sm }}>
         <NativeActionButton
-          label={isExporting ? '画像を準備中…' : 'シフト表を写真に保存'}
+          label="シフト表を写真に保存"
+          loading={exportAction === 'save'}
+          loadingLabel="画像を準備中…"
           onPress={() => void handleSave()}
           disabled={isExporting}
           haptic="success"
         />
         <NativeActionButton
           label="画像を共有"
+          loading={exportAction === 'share'}
+          loadingLabel="共有画像を準備中…"
           onPress={() => void handleShare()}
           disabled={isExporting}
           variant="outlined"

@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import * as WebBrowser from 'expo-web-browser';
 import { useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   type GestureResponderEvent,
   Pressable,
@@ -147,8 +148,9 @@ export function NotificationsScreen() {
           }
         />
         <HeaderAction
-          label={markAll.isPending ? '更新中…' : 'すべて既読'}
+          label="すべて既読"
           symbol="checkmark.circle"
+          loading={markAll.isPending}
           disabled={!unreadCount || markAll.isPending}
           onPress={handleMarkAll}
         />
@@ -251,7 +253,10 @@ export function NotificationsScreen() {
                     {showBucket ? <DateGroupHeader bucket={bucket} /> : null}
                     <NotificationRow
                       notice={notice}
-                      markingRead={markRead.isPending}
+                      markingRead={
+                        markRead.isPending && markRead.variables === notice.id
+                      }
+                      readDisabled={markRead.isPending}
                       onMarkRead={(event) => {
                         event.stopPropagation();
                         handleMarkRead(notice);
@@ -317,11 +322,13 @@ export function NotificationsScreen() {
 function NotificationRow({
   notice,
   markingRead,
+  readDisabled,
   onMarkRead,
   onPress,
 }: {
   notice: StaffNotification;
   markingRead: boolean;
+  readDisabled: boolean;
   onMarkRead: (event: GestureResponderEvent) => void;
   onPress: () => void;
 }) {
@@ -443,7 +450,8 @@ function NotificationRow({
             <Pressable
               accessibilityRole="button"
               accessibilityLabel={`${notice.title}を既読にする`}
-              disabled={markingRead}
+              accessibilityState={{ disabled: readDisabled, busy: markingRead }}
+              disabled={readDisabled}
               onPress={onMarkRead}
               hitSlop={8}
               style={({ pressed }) => ({
@@ -452,11 +460,16 @@ function NotificationRow({
                 paddingHorizontal: appSpacing.sm,
                 borderRadius: appRadii.pill,
                 backgroundColor: theme.surface,
-                opacity: markingRead ? 0.45 : pressed ? 0.6 : 1,
+                opacity: readDisabled && !markingRead ? 0.45 : pressed ? 0.6 : 1,
               })}>
-              <Text style={{ color: theme.warning, fontSize: 10, fontWeight: '900' }}>
-                既読にする
-              </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                {markingRead ? (
+                  <ActivityIndicator color={theme.warning} size="small" />
+                ) : null}
+                <Text style={{ color: theme.warning, fontSize: 10, fontWeight: '900' }}>
+                  {markingRead ? '更新中…' : '既読にする'}
+                </Text>
+              </View>
             </Pressable>
           )}
         </View>
@@ -469,12 +482,14 @@ function HeaderAction({
   label,
   symbol,
   active = false,
+  loading = false,
   disabled = false,
   onPress,
 }: {
   label: string;
   symbol: string;
   active?: boolean;
+  loading?: boolean;
   disabled?: boolean;
   onPress: () => void;
 }) {
@@ -482,7 +497,7 @@ function HeaderAction({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityState={{ disabled }}
+      accessibilityState={{ disabled, busy: loading }}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => ({
@@ -498,18 +513,25 @@ function HeaderAction({
         opacity: disabled ? 0.5 : pressed ? 0.68 : 1,
         boxShadow: active ? '0 8px 18px rgba(2, 6, 23, 0.16)' : undefined,
       })}>
-      <Image
-        source={`sf:${symbol}`}
-        tintColor={active ? theme.heroText : theme.textSecondary}
-        style={{ width: 18, height: 18 }}
-      />
+      {loading ? (
+        <ActivityIndicator
+          color={active ? theme.heroText : theme.textSecondary}
+          size="small"
+        />
+      ) : (
+        <Image
+          source={`sf:${symbol}`}
+          tintColor={active ? theme.heroText : theme.textSecondary}
+          style={{ width: 18, height: 18 }}
+        />
+      )}
       <Text
         style={{
           color: active ? theme.heroText : theme.textSecondary,
           fontSize: 13,
           fontWeight: '900',
         }}>
-        {label}
+        {loading ? '更新中…' : label}
       </Text>
     </Pressable>
   );
