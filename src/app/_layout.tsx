@@ -49,6 +49,7 @@ function RootNavigator() {
           <Stack.Screen name="notifications" options={{ title: '通知', presentation: 'modal' }} />
           <Stack.Screen name="help" options={{ title: 'ヘルプ募集', presentation: 'card' }} />
           <Stack.Screen name="shift-request" options={{ title: '希望シフト入力' }} />
+          <Stack.Screen name="shift-adjustment" options={{ title: 'シフト修正希望' }} />
           <Stack.Screen
             name="attendance-adjustment"
             options={{

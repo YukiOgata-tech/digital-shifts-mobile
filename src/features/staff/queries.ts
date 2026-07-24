@@ -3,19 +3,24 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSession } from '@/features/auth/session-provider';
 
 import {
+  addShiftAdjustmentEntry,
   applyToHelpRequest,
+  deleteShiftAdjustmentEntry,
   fetchActiveAttendanceRecord,
   fetchHelpRequests,
   fetchNotifications,
   fetchNotificationPreferences,
   fetchOpenShiftPeriods,
   fetchPublishedAssignments,
+  fetchStorePublishedSchedule,
+  fetchShiftAdjustmentWindows,
   markAllNotificationsRead,
   markNotificationRead,
   recordAttendanceEvent,
   replaceShiftRequestEntries,
   setShiftRequestSubmitted,
   submitManualAttendance,
+  submitShiftAdjustmentWindow,
   updateNotificationPreferences,
   updateStaffProfile,
 } from './api';
@@ -61,6 +66,68 @@ export function useOpenShiftPeriods() {
         storeId: storeId ?? undefined,
       }),
     enabled: Boolean(userId && tenantId),
+  });
+}
+
+export function useStorePublishedSchedule(yearMonth: string) {
+  const { tenantId, storeId, activeStore } = useStaffIdentity();
+  return useQuery({
+    queryKey: ['store-published-schedule', tenantId, storeId, yearMonth],
+    queryFn: () =>
+      fetchStorePublishedSchedule({
+        tenantId: tenantId!,
+        storeId: storeId!,
+        storeName: activeStore!.name,
+        yearMonth,
+      }),
+    enabled: Boolean(tenantId && storeId && activeStore),
+  });
+}
+
+export function useShiftAdjustmentWindows() {
+  const { userId, tenantId, storeId } = useStaffIdentity();
+  return useQuery({
+    queryKey: ['shift-adjustment-windows', userId, tenantId, storeId],
+    queryFn: () =>
+      fetchShiftAdjustmentWindows({
+        userId: userId!,
+        tenantId: tenantId!,
+        storeId: storeId ?? undefined,
+      }),
+    enabled: Boolean(userId && tenantId),
+  });
+}
+
+export function useAddShiftAdjustmentEntry() {
+  const queryClient = useQueryClient();
+  const { userId, tenantId } = useStaffIdentity();
+  return useMutation({
+    mutationFn: (input: Omit<Parameters<typeof addShiftAdjustmentEntry>[0], 'userId' | 'tenantId'>) =>
+      addShiftAdjustmentEntry({ ...input, userId: userId!, tenantId: tenantId! }),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['shift-adjustment-windows'] }),
+  });
+}
+
+export function useDeleteShiftAdjustmentEntry() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: deleteShiftAdjustmentEntry,
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: ['shift-adjustment-windows'] }),
+  });
+}
+
+export function useSubmitShiftAdjustmentWindow() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: submitShiftAdjustmentWindow,
+    onSuccess: async () => {
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['shift-adjustment-windows'] }),
+        queryClient.invalidateQueries({ queryKey: ['notifications'] }),
+      ]);
+    },
   });
 }
 

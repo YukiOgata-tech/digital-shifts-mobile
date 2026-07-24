@@ -45,6 +45,66 @@ export type ShiftAssignment = {
   roleLabel: string | null;
 };
 
+export type StoreScheduleMember = {
+  userId: string;
+  displayName: string;
+  role: string;
+  showOnShiftSheet: boolean;
+};
+
+export type StoreScheduleAssignment = {
+  id: string;
+  userId: string;
+  workDate: string;
+  startAt: string;
+  endAt: string;
+  breakMinutes: number;
+  roleLabel: string | null;
+  note: string | null;
+  timeSlotLabel: string | null;
+};
+
+export type StorePublishedSchedule = {
+  storeId: string;
+  storeName: string;
+  yearMonth: string;
+  members: StoreScheduleMember[];
+  assignments: StoreScheduleAssignment[];
+};
+
+export type ShiftAdjustmentRequestType =
+  | 'change_time'
+  | 'unavailable'
+  | 'available'
+  | 'note';
+
+export type ShiftAdjustmentEntry = {
+  id: string;
+  assignmentId: string | null;
+  workDate: string;
+  requestType: ShiftAdjustmentRequestType;
+  desiredStartAt: string | null;
+  desiredEndAt: string | null;
+  note: string | null;
+};
+
+export type ShiftAdjustmentWindow = {
+  id: string;
+  storeId: string;
+  storeName: string;
+  periodId: string;
+  periodName: string;
+  periodStartDate: string;
+  periodEndDate: string;
+  status: 'open' | 'submitted' | 'reviewed' | 'applied' | 'closed' | 'cancelled';
+  reason: string | null;
+  openedAt: string;
+  dueAt: string | null;
+  submittedAt: string | null;
+  assignments: ShiftAssignment[];
+  entries: ShiftAdjustmentEntry[];
+};
+
 export type ShiftRequestEntry = {
   id: string;
   workDate: string;

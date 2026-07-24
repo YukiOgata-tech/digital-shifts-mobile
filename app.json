@@ -48,6 +48,16 @@
           "defaultChannel": "staff-updates",
           "enableBackgroundRemoteNotifications": false
         }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": false,
+          "savePhotosPermission": "Dミセは、シフト表を画像として端末に保存するため写真への追加権限を使用します。",
+          "granularPermissions": [
+            "photo"
+          ]
+        }
       ]
     ],
     "experiments": {

@@ -6,9 +6,12 @@ import type {
   OpenShiftPeriod,
   NotificationPreferences,
   ShiftAssignment,
+  ShiftAdjustmentRequestType,
+  ShiftAdjustmentWindow,
   ShiftRequestEntry,
   StaffContextData,
   StaffNotification,
+  StorePublishedSchedule,
   StaffStore,
   StaffTenant,
 } from './types';
@@ -141,6 +144,249 @@ export async function fetchPublishedAssignments(input: {
     status: row.status,
     roleLabel: row.role_label,
   }));
+}
+
+export async function fetchStorePublishedSchedule(input: {
+  tenantId: string;
+  storeId: string;
+  storeName: string;
+  yearMonth: string;
+}): Promise<StorePublishedSchedule> {
+  const client = requireSupabase();
+  const monthStart = `${input.yearMonth}-01`;
+  const [year, month] = input.yearMonth.split('-').map(Number);
+  const monthEnd = new Date(Date.UTC(year, month, 0)).toISOString().slice(0, 10);
+
+  const [{ data: memberRows, error: memberError }, { data: assignmentRows, error: assignmentError }] =
+    await Promise.all([
+      client
+        .from('store_memberships')
+        .select(
+          'user_id, role, show_on_shift_sheet, profiles(display_name, email)',
+        )
+        .eq('tenant_id', input.tenantId)
+        .eq('store_id', input.storeId)
+        .eq('status', 'active')
+        .order('sort_order', { ascending: true, nullsFirst: false })
+        .order('created_at', { ascending: true }),
+      client
+        .from('shift_assignments')
+        .select(
+          'id, user_id, work_date, start_at, end_at, break_minutes, role_label, note, store_shift_time_slots(short_label, name), shift_schedules!inner(is_published)',
+        )
+        .eq('tenant_id', input.tenantId)
+        .eq('store_id', input.storeId)
+        .eq('status', 'confirmed')
+        .eq('shift_schedules.is_published', true)
+        .gte('work_date', monthStart)
+        .lte('work_date', monthEnd)
+        .order('work_date', { ascending: true })
+        .order('start_at', { ascending: true }),
+    ]);
+
+  if (memberError) throw memberError;
+  if (assignmentError) throw assignmentError;
+
+  const members = (memberRows ?? []).map((row) => {
+    const profile = one(row.profiles);
+    return {
+      userId: row.user_id,
+      displayName: profile?.display_name || profile?.email || '名前未設定',
+      role: row.role,
+      showOnShiftSheet: row.show_on_shift_sheet !== false,
+    };
+  });
+
+  const visibleMemberIds = new Set(
+    members.filter((member) => member.showOnShiftSheet).map((member) => member.userId),
+  );
+
+  return {
+    storeId: input.storeId,
+    storeName: input.storeName,
+    yearMonth: input.yearMonth,
+    members: members.filter((member) => member.showOnShiftSheet),
+    assignments: (assignmentRows ?? [])
+      .filter((row) => visibleMemberIds.has(row.user_id))
+      .map((row) => ({
+        id: row.id,
+        userId: row.user_id,
+        workDate: row.work_date,
+        startAt: row.start_at,
+        endAt: row.end_at,
+        breakMinutes: row.break_minutes ?? 0,
+        roleLabel: row.role_label,
+        note: row.note,
+        timeSlotLabel: one(row.store_shift_time_slots)?.short_label ?? null,
+      })),
+  };
+}
+
+export async function fetchShiftAdjustmentWindows(input: {
+  userId: string;
+  tenantId: string;
+  storeId?: string;
+}): Promise<ShiftAdjustmentWindow[]> {
+  const client = requireSupabase();
+  let windowQuery = client
+    .from('shift_adjustment_windows')
+    .select(
+      'id, store_id, shift_period_id, status, reason, opened_at, due_at, submitted_at, stores(name), shift_periods(name, start_date, end_date), shift_adjustment_entries(id, shift_assignment_id, work_date, request_type, desired_start_at, desired_end_at, note)',
+    )
+    .eq('tenant_id', input.tenantId)
+    .eq('user_id', input.userId)
+    .order('opened_at', { ascending: false });
+  if (input.storeId) windowQuery = windowQuery.eq('store_id', input.storeId);
+
+  const { data: windows, error: windowError } = await windowQuery;
+  if (windowError) throw windowError;
+  if (!windows?.length) return [];
+
+  const periodIds = [...new Set(windows.map((window) => window.shift_period_id))];
+  const { data: assignments, error: assignmentError } = await client
+    .from('shift_assignments')
+    .select(
+      'id, store_id, shift_period_id, work_date, start_at, end_at, break_minutes, status, role_label, stores(name), shift_schedules!inner(is_published)',
+    )
+    .eq('tenant_id', input.tenantId)
+    .eq('user_id', input.userId)
+    .eq('shift_schedules.is_published', true)
+    .in('shift_period_id', periodIds)
+    .neq('status', 'cancelled')
+    .order('start_at', { ascending: true });
+  if (assignmentError) throw assignmentError;
+
+  const assignmentsByPeriod = new Map<string, ShiftAssignment[]>();
+  for (const row of assignments ?? []) {
+    const items = assignmentsByPeriod.get(row.shift_period_id) ?? [];
+    items.push({
+      id: row.id,
+      storeId: row.store_id,
+      storeName: one(row.stores)?.name ?? '店舗',
+      workDate: row.work_date,
+      startAt: row.start_at,
+      endAt: row.end_at,
+      breakMinutes: row.break_minutes ?? 0,
+      status: row.status,
+      roleLabel: row.role_label,
+    });
+    assignmentsByPeriod.set(row.shift_period_id, items);
+  }
+
+  return windows.map((window) => {
+    const period = one(window.shift_periods);
+    return {
+      id: window.id,
+      storeId: window.store_id,
+      storeName: one(window.stores)?.name ?? '店舗',
+      periodId: window.shift_period_id,
+      periodName: period?.name ?? 'シフト期間',
+      periodStartDate: period?.start_date ?? '',
+      periodEndDate: period?.end_date ?? '',
+      status: window.status as ShiftAdjustmentWindow['status'],
+      reason: window.reason,
+      openedAt: window.opened_at,
+      dueAt: window.due_at,
+      submittedAt: window.submitted_at,
+      assignments: assignmentsByPeriod.get(window.shift_period_id) ?? [],
+      entries: (window.shift_adjustment_entries ?? [])
+        .map((entry) => ({
+          id: entry.id,
+          assignmentId: entry.shift_assignment_id,
+          workDate: entry.work_date,
+          requestType: entry.request_type as ShiftAdjustmentRequestType,
+          desiredStartAt: entry.desired_start_at,
+          desiredEndAt: entry.desired_end_at,
+          note: entry.note,
+        }))
+        .sort((a, b) => a.workDate.localeCompare(b.workDate)),
+    };
+  });
+}
+
+export async function addShiftAdjustmentEntry(input: {
+  userId: string;
+  tenantId: string;
+  window: ShiftAdjustmentWindow;
+  assignmentId: string | null;
+  workDate: string;
+  requestType: ShiftAdjustmentRequestType;
+  desiredStartTime?: string;
+  desiredEndTime?: string;
+  note?: string;
+}) {
+  const client = requireSupabase();
+  if (input.window.status !== 'open') {
+    throw new Error('この修正希望は編集できません。');
+  }
+  if (
+    input.workDate < input.window.periodStartDate ||
+    input.workDate > input.window.periodEndDate
+  ) {
+    throw new Error('シフト期間内の日付を入力してください。');
+  }
+  const needsTime = input.requestType === 'change_time' || input.requestType === 'available';
+  if (
+    needsTime &&
+    (!input.desiredStartTime ||
+      !input.desiredEndTime ||
+      !/^\d{2}:\d{2}$/.test(input.desiredStartTime) ||
+      !/^\d{2}:\d{2}$/.test(input.desiredEndTime))
+  ) {
+    throw new Error('希望開始・終了を09:00の形式で入力してください。');
+  }
+
+  let desiredStartAt: string | null = null;
+  let desiredEndAt: string | null = null;
+  if (needsTime) {
+    desiredStartAt = `${input.workDate}T${input.desiredStartTime}:00+09:00`;
+    desiredEndAt = `${input.workDate}T${input.desiredEndTime}:00+09:00`;
+    if (new Date(desiredEndAt) <= new Date(desiredStartAt)) {
+      const next = new Date(`${input.workDate}T00:00:00+09:00`);
+      next.setDate(next.getDate() + 1);
+      const nextDate = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Tokyo',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(next);
+      desiredEndAt = `${nextDate}T${input.desiredEndTime}:00+09:00`;
+    }
+  }
+
+  const { error } = await client.from('shift_adjustment_entries').insert({
+    tenant_id: input.tenantId,
+    adjustment_window_id: input.window.id,
+    shift_assignment_id: input.assignmentId,
+    work_date: input.workDate,
+    request_type: input.requestType,
+    desired_start_at: desiredStartAt,
+    desired_end_at: desiredEndAt,
+    note: input.note?.trim() || null,
+  });
+  if (error) throw error;
+}
+
+export async function deleteShiftAdjustmentEntry(input: {
+  id: string;
+  windowId: string;
+}) {
+  const client = requireSupabase();
+  const { error } = await client
+    .from('shift_adjustment_entries')
+    .delete()
+    .eq('id', input.id)
+    .eq('adjustment_window_id', input.windowId);
+  if (error) throw error;
+}
+
+export async function submitShiftAdjustmentWindow(windowId: string) {
+  const client = requireSupabase();
+  const { data, error } = await client.rpc('submit_mobile_shift_adjustment', {
+    p_window_id: windowId,
+  });
+  if (error) throw error;
+  return data as string;
 }
 
 export async function fetchOpenShiftPeriods(input: {
