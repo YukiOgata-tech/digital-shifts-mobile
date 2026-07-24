@@ -72,7 +72,7 @@ export function ShiftAdjustmentScreen() {
   const { windowId } = useLocalSearchParams<{ windowId?: string }>();
   const router = useRouter();
   const theme = useAppTheme();
-  const windows = useShiftAdjustmentWindows();
+  const windows = useShiftAdjustmentWindows(true);
   const [selectedWindowId, setSelectedWindowId] = useState<string | null>(
     windowId ?? null,
   );

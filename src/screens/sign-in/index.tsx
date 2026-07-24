@@ -68,12 +68,7 @@ export function SignInScreen() {
               alignSelf: 'flex-start',
               width: 52,
               height: 52,
-              padding: 4,
-              borderRadius: appRadii.md,
               borderCurve: 'continuous',
-              backgroundColor: theme.brandSoft,
-              borderWidth: 1,
-              borderColor: theme.brandSoft,
             }}>
             <Image
               source={require('@/assets/images/brand/dmise-logo.png')}

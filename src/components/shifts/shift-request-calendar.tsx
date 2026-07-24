@@ -19,9 +19,14 @@ import {
   type ShiftRequestDraft,
   type StrokeMode,
 } from '@/features/shift-request/draft';
+import {
+  resolveTimeSlot,
+  timeSlotPalette,
+} from '@/features/shift-request/time-slot-colors';
+import type { ShiftTimeSlot } from '@/features/staff/types';
 
 const WEEKDAYS = ['日', '月', '火', '水', '木', '金', '土'];
-const CELL_HEIGHT = 68;
+const CELL_HEIGHT = 76;
 
 type Stroke = {
   mode: StrokeMode;
@@ -34,10 +39,12 @@ type Props = {
   days: ShiftCalendarDay[];
   draft: ShiftRequestDraft;
   brush: ShiftRequestBrush;
+  timeSlots: ShiftTimeSlot[];
   editableDates: Set<string>;
   closedReasons: Map<string, string | null>;
   dragEnabled: boolean;
   disabled: boolean;
+  embedded?: boolean;
   brushForDate?: (date: string) => ShiftRequestBrush;
   onChange: (draft: ShiftRequestDraft) => void;
   onEdit: (date: string) => void;
@@ -45,22 +52,40 @@ type Props = {
 
 function toneForEntry(
   entry: ShiftRequestDraft[string],
+  timeSlot: ShiftTimeSlot | undefined,
   theme: ReturnType<typeof useAppTheme>,
 ) {
   if (!entry) return { background: theme.surface, foreground: theme.textSecondary };
+  if (timeSlot) {
+    const palette = timeSlotPalette(timeSlot.color);
+    return {
+      accent: palette.base,
+      background: palette.soft,
+      foreground: palette.onSoft,
+    };
+  }
   if (entry.entryType === 'available') {
     return { background: theme.brandSoft, foreground: theme.brandStrong };
   }
   if (entry.entryType === 'preferred') {
     return { background: theme.warningSoft, foreground: theme.warning };
   }
-  return { background: theme.dangerSoft, foreground: theme.danger };
+  return { background: theme.surfaceMuted, foreground: theme.textSecondary };
 }
 
-function compactEntryLabel(entry: ShiftRequestDraft[string]) {
+function compactEntryLabel(
+  entry: ShiftRequestDraft[string],
+  timeSlot: ShiftTimeSlot | undefined,
+) {
   if (!entry) return { primary: '未入力', secondary: '' };
   if (entry.entryType === 'unavailable') {
     return { primary: 'NG', secondary: '終日' };
+  }
+  if (timeSlot) {
+    return {
+      primary: timeSlot.shortLabel,
+      secondary: entry.entryType === 'preferred' ? '優先希望' : '勤務可能',
+    };
   }
   return {
     primary: entry.entryType === 'preferred' ? '優先' : '勤務可',
@@ -72,10 +97,12 @@ export function ShiftRequestCalendar({
   days,
   draft,
   brush,
+  timeSlots,
   editableDates,
   closedReasons,
   dragEnabled,
   disabled,
+  embedded = false,
   brushForDate,
   onChange,
   onEdit,
@@ -215,11 +242,12 @@ export function ShiftRequestCalendar({
     <View
       style={{
         overflow: 'hidden',
-        borderWidth: 1,
+        borderWidth: embedded ? 0 : 1,
         borderColor: theme.border,
-        borderRadius: appRadii.md,
+        borderRadius: embedded ? 0 : appRadii.lg,
         borderCurve: 'continuous',
         backgroundColor: theme.surface,
+        boxShadow: embedded ? undefined : '0 8px 20px rgba(15, 23, 42, 0.10)',
       }}>
       <View
         accessibilityRole="header"
@@ -229,7 +257,7 @@ export function ShiftRequestCalendar({
           alignItems: 'center',
           borderBottomWidth: 1,
           borderColor: theme.border,
-          backgroundColor: theme.surfaceMuted,
+          backgroundColor: theme.surface,
         }}>
         {WEEKDAYS.map((weekday, index) => (
           <Text
@@ -238,8 +266,8 @@ export function ShiftRequestCalendar({
               flex: 1,
               textAlign: 'center',
               color: index === 0 ? theme.danger : index === 6 ? theme.info : theme.textSecondary,
-              fontSize: 12,
-              fontWeight: '700',
+              fontSize: 13,
+              fontWeight: '900',
             }}>
             {weekday}
           </Text>
@@ -266,8 +294,9 @@ export function ShiftRequestCalendar({
                         entryMatchesBrush(storedEntry, brush)
                       ? undefined
                       : storedEntry;
-                const tone = toneForEntry(previewEntry, theme);
-                const compactLabel = compactEntryLabel(previewEntry);
+                const timeSlot = resolveTimeSlot(previewEntry, timeSlots);
+                const tone = toneForEntry(previewEntry, timeSlot, theme);
+                const compactLabel = compactEntryLabel(previewEntry, timeSlot);
                 const status = isClosed
                   ? closedReason
                     ? `休業日 ${closedReason}`
@@ -314,13 +343,13 @@ export function ShiftRequestCalendar({
                     }}
                     delayLongPress={450}
                     style={({ pressed }) => ({
+                      position: 'relative',
                       height: CELL_HEIGHT,
                       minWidth: 0,
                       flex: 1,
-                      paddingHorizontal: 2,
+                      paddingHorizontal: 3,
                       paddingVertical: appSpacing.xs,
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
+                      gap: 2,
                       borderRightWidth: columnIndex === 6 ? 0 : 0.5,
                       borderBottomWidth: rowIndex === weeks.length - 1 ? 0 : 0.5,
                       borderColor: theme.borderSoft,
@@ -334,34 +363,113 @@ export function ShiftRequestCalendar({
                       outlineColor: previewed ? theme.brand : 'transparent',
                       outlineOffset: -2,
                     })}>
-                    {day.inPeriod ? (
-                      <>
+                    {tone.accent ? (
+                      <View
+                        accessibilityElementsHidden
+                        importantForAccessibility="no-hide-descendants"
+                        style={{
+                          position: 'absolute',
+                          top: 0,
+                          right: 0,
+                          left: 0,
+                          height: 3,
+                          backgroundColor: tone.accent,
+                        }}
+                      />
+                    ) : null}
+                    <View
+                      style={{
+                        minHeight: 26,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 2,
+                      }}>
+                      <Text
+                        numberOfLines={1}
+                        adjustsFontSizeToFit
+                        style={{
+                          color: !day.inPeriod
+                            ? theme.border
+                            : columnIndex === 0
+                              ? theme.danger
+                              : columnIndex === 6
+                                ? theme.info
+                                : theme.text,
+                          fontSize: 12,
+                          fontWeight: '900',
+                          fontVariant: ['tabular-nums'],
+                        }}>
+                        {dateLabel}
+                      </Text>
+                      {editable && !dragEnabled ? (
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={`${day.dateKey}を詳しく編集`}
+                          hitSlop={2}
+                          onPress={(event) => {
+                            event.stopPropagation();
+                            onEdit(day.dateKey);
+                          }}
+                          style={({ pressed: editPressed }) => ({
+                            width: 26,
+                            height: 26,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            borderRadius: 8,
+                            borderCurve: 'continuous',
+                            borderWidth: 1,
+                            borderColor: theme.borderSoft,
+                            backgroundColor: theme.surface,
+                            opacity: editPressed ? 0.55 : 1,
+                          })}>
+                          <Text
+                            style={{
+                              color: theme.textSecondary,
+                              fontSize: storedEntry ? 12 : 17,
+                              fontWeight: '700',
+                            }}>
+                            {storedEntry ? '•••' : '+'}
+                          </Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
+
+                    <View
+                      style={{
+                        minHeight: 36,
+                        flex: 1,
+                        width: '100%',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: 1,
+                      }}>
+                      {!day.inPeriod ? (
+                        <Text style={{ color: theme.border, fontSize: 15, fontWeight: '900' }}>-</Text>
+                      ) : isClosed ? (
                         <Text
-                          numberOfLines={1}
-                          adjustsFontSizeToFit
+                          numberOfLines={2}
                           style={{
-                            color:
-                              columnIndex === 0
-                                ? theme.danger
-                                : columnIndex === 6
-                                  ? theme.info
-                                  : theme.text,
-                            fontSize: 12,
-                            fontWeight: '800',
+                            color: theme.warning,
+                            fontSize: 9,
+                            fontWeight: '900',
+                            textAlign: 'center',
                           }}>
-                          {dateLabel}
+                          休業
+                          {closedReason ? `\n${closedReason}` : ''}
                         </Text>
-                        <View style={{ width: '100%', alignItems: 'center', gap: 1 }}>
+                      ) : previewEntry ? (
+                        <>
                           <Text
                             numberOfLines={1}
                             style={{
-                              color: isClosed ? theme.textSecondary : tone.foreground,
+                              color: tone.foreground,
                               fontSize: 9,
                               fontWeight: '900',
                             }}>
-                            {isClosed ? '休業' : compactLabel.primary}
+                            {compactLabel.primary}
                           </Text>
-                          {isClosed || !compactLabel.secondary ? null : (
+                          {compactLabel.secondary ? (
                             <Text
                               numberOfLines={1}
                               adjustsFontSizeToFit
@@ -376,10 +484,12 @@ export function ShiftRequestCalendar({
                               }}>
                               {compactLabel.secondary}
                             </Text>
-                          )}
-                        </View>
-                      </>
-                    ) : null}
+                          ) : null}
+                        </>
+                      ) : (
+                        <Text style={{ color: theme.border, fontSize: 23, fontWeight: '700' }}>＋</Text>
+                      )}
+                    </View>
                   </Pressable>
                 );
               })}
@@ -387,6 +497,86 @@ export function ShiftRequestCalendar({
           ))}
         </View>
       </GestureDetector>
+
+      <View
+        style={{
+          minHeight: 42,
+          gap: appSpacing.sm,
+          paddingHorizontal: appSpacing.md,
+          paddingVertical: appSpacing.sm,
+          borderTopWidth: 1,
+          borderTopColor: theme.borderSoft,
+          backgroundColor: theme.surface,
+        }}>
+        {timeSlots.length ? (
+          <View style={{ gap: 5 }}>
+            <Text
+              selectable
+              style={{ color: theme.text, fontSize: 10, fontWeight: '900' }}>
+              勤務時間帯
+            </Text>
+            <View
+              accessibilityRole="list"
+              style={{
+                flexDirection: 'row',
+                flexWrap: 'wrap',
+                alignItems: 'center',
+                gap: appSpacing.sm,
+              }}>
+              {timeSlots.map((slot) => (
+                <LegendDot
+                  key={slot.id}
+                  color={timeSlotPalette(slot.color).base}
+                  label={`${slot.shortLabel} ${slot.startTime}-${slot.endTime}`}
+                />
+              ))}
+            </View>
+          </View>
+        ) : null}
+        <View
+          style={{
+            flexDirection: 'row',
+            flexWrap: 'wrap',
+            alignItems: 'center',
+            gap: appSpacing.md,
+          }}>
+          {timeSlots.length ? (
+            <Text
+              selectable
+              style={{ color: theme.textSecondary, fontSize: 10, fontWeight: '800' }}>
+              勤務区分はセル内に表示
+            </Text>
+          ) : (
+            <>
+              <LegendDot color={theme.brand} label="勤務可能" />
+              <LegendDot color={theme.warning} label="優先希望" />
+            </>
+          )}
+          <LegendDot color={theme.textSecondary} label="NG" />
+          <LegendDot color="#F43F5E" label="日曜・祝日" />
+          <LegendDot color="#2563EB" label="土曜" />
+        </View>
+      </View>
+    </View>
+  );
+}
+
+function LegendDot({ color, label }: { color: string; label: string }) {
+  const theme = useAppTheme();
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+      <View
+        style={{
+          width: 13,
+          height: 13,
+          borderRadius: 4,
+          borderCurve: 'continuous',
+          backgroundColor: color,
+        }}
+      />
+      <Text selectable style={{ color: theme.textSecondary, fontSize: 10, fontWeight: '800' }}>
+        {label}
+      </Text>
     </View>
   );
 }

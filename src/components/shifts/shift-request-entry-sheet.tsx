@@ -15,12 +15,19 @@ import type {
   ShiftRequestBrush,
   ShiftRequestDraftEntry,
 } from '@/features/shift-request/draft';
+import {
+  resolveTimeSlot,
+  timeSlotPalette,
+} from '@/features/shift-request/time-slot-colors';
 import { formatDateLabel } from '@/features/staff/date';
+import type { ShiftTimeSlot } from '@/features/staff/types';
 
 type Props = {
   date: string | null;
   entry: ShiftRequestDraftEntry | undefined;
   defaultBrush: ShiftRequestBrush;
+  timeSlots: ShiftTimeSlot[];
+  useTimeSlots: boolean;
   onClose: () => void;
   onSave: (entry: ShiftRequestDraftEntry) => void;
   onDelete: () => void;
@@ -39,6 +46,8 @@ export function ShiftRequestEntrySheet({
   date,
   entry,
   defaultBrush,
+  timeSlots,
+  useTimeSlots,
   onClose,
   onSave,
   onDelete,
@@ -56,6 +65,7 @@ export function ShiftRequestEntrySheet({
 
   const update = (patch: Partial<ShiftRequestDraftEntry>) =>
     setDraft((current) => ({ ...current, ...patch }));
+  const selectedTimeSlot = resolveTimeSlot(draft, timeSlots);
 
   return (
     <Modal
@@ -175,19 +185,103 @@ export function ShiftRequestEntrySheet({
                 ))}
               </View>
               {!draft.isAllDay ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: appSpacing.sm }}>
-                  <TimeField
-                    label="開始"
-                    value={draft.startTime}
-                    onChange={(startTime) => update({ startTime, timeSlotId: null })}
-                  />
-                  <Text style={{ color: theme.textSecondary }}>–</Text>
-                  <TimeField
-                    label="終了"
-                    value={draft.endTime}
-                    onChange={(endTime) => update({ endTime, timeSlotId: null })}
-                  />
-                </View>
+                <>
+                  {timeSlots.length ? (
+                    <View style={{ gap: appSpacing.xs }}>
+                      <Text
+                        selectable
+                        style={{
+                          color: theme.textSecondary,
+                          fontSize: 12,
+                          fontWeight: '800',
+                        }}>
+                        店舗の勤務時間帯
+                      </Text>
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        contentContainerStyle={{ gap: appSpacing.sm }}>
+                        {timeSlots.map((slot) => {
+                          const selected = selectedTimeSlot?.id === slot.id;
+                          const palette = timeSlotPalette(slot.color);
+                          return (
+                            <Pressable
+                              key={slot.id}
+                              accessibilityRole="button"
+                              accessibilityLabel={`${slot.name} ${slot.startTime}から${slot.endTime}`}
+                              accessibilityState={{ selected }}
+                              onPress={() =>
+                                update({
+                                  startTime: slot.startTime,
+                                  endTime: slot.endTime,
+                                  timeSlotId: useTimeSlots ? slot.id : null,
+                                })
+                              }
+                              style={({ pressed }) => ({
+                                minHeight: 48,
+                                minWidth: 104,
+                                justifyContent: 'center',
+                                gap: 2,
+                                paddingHorizontal: appSpacing.md,
+                                paddingVertical: appSpacing.xs,
+                                borderRadius: appRadii.sm,
+                                borderCurve: 'continuous',
+                                borderWidth: selected ? 2 : 1,
+                                borderColor: selected
+                                  ? palette.base
+                                  : palette.border,
+                                backgroundColor: selected
+                                  ? palette.base
+                                  : palette.soft,
+                                opacity: pressed ? 0.65 : 1,
+                              })}>
+                              <Text
+                                style={{
+                                  color: selected
+                                    ? palette.onBase
+                                    : palette.onSoft,
+                                  fontSize: 14,
+                                  fontWeight: '900',
+                                }}>
+                                {slot.shortLabel}
+                              </Text>
+                              <Text
+                                style={{
+                                  color: selected
+                                    ? palette.onBase
+                                    : palette.onSoft,
+                                  fontSize: 11,
+                                  fontWeight: '800',
+                                  fontVariant: ['tabular-nums'],
+                                  opacity: selected ? 0.86 : 0.72,
+                                }}>
+                                {slot.startTime}-{slot.endTime}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </ScrollView>
+                    </View>
+                  ) : null}
+                  <View
+                    style={{
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      gap: appSpacing.sm,
+                    }}>
+                    <TimeField
+                      label="開始"
+                      value={draft.startTime}
+                      onChange={(startTime) => update({ startTime, timeSlotId: null })}
+                    />
+                    <Text style={{ color: theme.textSecondary }}>–</Text>
+                    <TimeField
+                      label="終了"
+                      value={draft.endTime}
+                      onChange={(endTime) => update({ endTime, timeSlotId: null })}
+                    />
+                  </View>
+                </>
               ) : null}
             </View>
           ) : (

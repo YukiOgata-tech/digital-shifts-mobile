@@ -114,9 +114,11 @@ export async function fetchPublishedAssignments(input: {
   userId: string;
   tenantId: string;
   storeId?: string;
+  storeIds?: string[];
   fromDate: string;
   toDate: string;
 }): Promise<ShiftAssignment[]> {
+  if (input.storeIds && !input.storeIds.length) return [];
   const client = requireSupabase();
   let query = client
     .from('shift_assignments')
@@ -131,7 +133,11 @@ export async function fetchPublishedAssignments(input: {
     .neq('status', 'cancelled')
     .order('start_at', { ascending: true });
 
-  if (input.storeId) query = query.eq('store_id', input.storeId);
+  if (input.storeId) {
+    query = query.eq('store_id', input.storeId);
+  } else if (input.storeIds) {
+    query = query.in('store_id', input.storeIds);
+  }
   const { data, error } = await query;
   if (error) throw error;
 
@@ -264,7 +270,9 @@ export async function fetchShiftAdjustmentWindows(input: {
   userId: string;
   tenantId: string;
   storeId?: string;
+  storeIds?: string[];
 }): Promise<ShiftAdjustmentWindow[]> {
+  if (input.storeIds && !input.storeIds.length) return [];
   const client = requireSupabase();
   let windowQuery = client
     .from('shift_adjustment_windows')
@@ -274,7 +282,11 @@ export async function fetchShiftAdjustmentWindows(input: {
     .eq('tenant_id', input.tenantId)
     .eq('user_id', input.userId)
     .order('opened_at', { ascending: false });
-  if (input.storeId) windowQuery = windowQuery.eq('store_id', input.storeId);
+  if (input.storeId) {
+    windowQuery = windowQuery.eq('store_id', input.storeId);
+  } else if (input.storeIds) {
+    windowQuery = windowQuery.in('store_id', input.storeIds);
+  }
 
   const { data: windows, error: windowError } = await windowQuery;
   if (windowError) throw windowError;
@@ -440,7 +452,9 @@ export async function fetchOpenShiftPeriods(input: {
   userId: string;
   tenantId: string;
   storeId?: string;
+  storeIds?: string[];
 }): Promise<OpenShiftPeriod[]> {
+  if (input.storeIds && !input.storeIds.length) return [];
   const client = requireSupabase();
   let periodQuery = client
     .from('shift_periods')
@@ -452,7 +466,11 @@ export async function fetchOpenShiftPeriods(input: {
     .gt('request_deadline_at', new Date().toISOString())
     .order('request_deadline_at', { ascending: true });
 
-  if (input.storeId) periodQuery = periodQuery.eq('store_id', input.storeId);
+  if (input.storeId) {
+    periodQuery = periodQuery.eq('store_id', input.storeId);
+  } else if (input.storeIds) {
+    periodQuery = periodQuery.in('store_id', input.storeIds);
+  }
   const { data: periods, error: periodError } = await periodQuery;
   if (periodError) throw periodError;
   if (!periods?.length) return [];
@@ -545,19 +563,61 @@ export async function fetchNotifications(input: {
     .eq('tenant_id', input.tenantId)
     .eq('user_id', input.userId)
     .order('created_at', { ascending: false })
-    .limit(100);
+    .limit(80);
   if (error) throw error;
 
-  return (data ?? []).map((row) => ({
-    id: row.id,
-    type: row.type,
-    title: row.title,
-    body: row.body,
-    linkPath: row.link_path,
-    metadata: (row.metadata as Record<string, unknown> | null) ?? {},
-    readAt: row.read_at,
-    createdAt: row.created_at,
-  }));
+  const periodIds = [
+    ...new Set(
+      (data ?? []).flatMap((row) => {
+        const match = row.link_path?.match(/\/shift-periods\/([0-9a-f-]{36})(?:\/|$|\?)/i);
+        return match?.[1] ? [match[1]] : [];
+      }),
+    ),
+  ];
+  const periodMetadata = new Map<
+    string,
+    { startDate: string; endDate: string; storeId: string }
+  >();
+  if (periodIds.length) {
+    const { data: periodRows } = await client
+      .from('shift_periods')
+      .select('id, store_id, start_date, end_date')
+      .eq('tenant_id', input.tenantId)
+      .in('id', periodIds);
+    for (const period of periodRows ?? []) {
+      periodMetadata.set(period.id, {
+        startDate: period.start_date,
+        endDate: period.end_date,
+        storeId: period.store_id,
+      });
+    }
+  }
+
+  return (data ?? []).map((row) => {
+    const metadata = (row.metadata as Record<string, unknown> | null) ?? {};
+    const periodId = row.link_path?.match(
+      /\/shift-periods\/([0-9a-f-]{36})(?:\/|$|\?)/i,
+    )?.[1];
+    const period = periodId ? periodMetadata.get(periodId) : undefined;
+    return {
+      id: row.id,
+      type: row.type,
+      title: row.title,
+      body: row.body,
+      linkPath: row.link_path,
+      metadata: period
+        ? {
+            ...metadata,
+            shift_period_id: periodId,
+            store_id: period.storeId,
+            start_date: metadata.start_date ?? period.startDate,
+            end_date: metadata.end_date ?? period.endDate,
+          }
+        : metadata,
+      readAt: row.read_at,
+      createdAt: row.created_at,
+    };
+  });
 }
 
 export async function markNotificationRead(input: {

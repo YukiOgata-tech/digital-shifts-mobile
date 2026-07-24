@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
@@ -24,9 +24,17 @@ import type {
 
 export function ShiftsScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ month?: string; openedAt?: string }>();
   const theme = useAppTheme();
   const today = toDateKey(new Date());
-  const [yearMonth, setYearMonth] = useState(today.slice(0, 7));
+  const requestedMonth = isYearMonth(params.month) ? params.month : today.slice(0, 7);
+  const requestedMonthKey = `${requestedMonth}:${params.openedAt ?? ''}`;
+  const [monthState, setMonthState] = useState({
+    source: requestedMonthKey,
+    value: requestedMonth,
+  });
+  const yearMonth =
+    monthState.source === requestedMonthKey ? monthState.value : requestedMonth;
   const monthRange = useMemo(() => getMonthRange(yearMonth), [yearMonth]);
   const periods = useOpenShiftPeriods(true);
   const upcomingAssignments = useAssignments(0, 365, true);
@@ -241,7 +249,9 @@ export function ShiftsScreen() {
           yearMonth={yearMonth}
           assignments={monthAssignments.data ?? []}
           attendanceRecords={attendance.data ?? []}
-          onMonthChange={setYearMonth}
+          onMonthChange={(value) =>
+            setMonthState({ source: requestedMonthKey, value })
+          }
         />
       )}
 
@@ -493,6 +503,10 @@ function getMonthRange(yearMonth: string) {
     startDate: `${yearMonth}-01`,
     endDate: `${yearMonth}-${String(lastDay).padStart(2, '0')}`,
   };
+}
+
+function isYearMonth(value: string | undefined): value is string {
+  return Boolean(value && /^\d{4}-(0[1-9]|1[0-2])$/.test(value));
 }
 
 function formatDateRange(startDate: string, endDate: string) {
