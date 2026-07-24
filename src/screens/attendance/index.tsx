@@ -1,521 +1,329 @@
 import { Image } from 'expo-image';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
-import { Alert, Pressable, Text, TextInput, View } from 'react-native';
+import { SymbolView } from 'expo-symbols';
+import { useState } from 'react';
+import { Alert, Pressable, Text, View } from 'react-native';
 
 import { AppScreen } from '@/components/ui/app-screen';
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/data-state';
-import { NativeActionButton } from '@/components/ui/native-action-button';
 import { PageIntro } from '@/components/ui/page-intro';
-import { SectionCard } from '@/components/ui/section-card';
-import { SectionHeading } from '@/components/ui/section-heading';
-import { StatusPill } from '@/components/ui/status-pill';
 import { appRadii, appSpacing, useAppTheme } from '@/constants/app-theme';
 import {
+  calculateDistanceMeters,
   getAttendanceLocation,
-  type AttendanceLocationEvidence,
 } from '@/features/attendance/location';
-import { formatDateLabel, formatTime, toDateKey } from '@/features/staff/date';
 import {
-  useActiveAttendanceRecord,
-  useAssignments,
+  useAttendanceStoreStatuses,
   useRecordAttendanceEvent,
   useStaffIdentity,
 } from '@/features/staff/queries';
-
-type AttendanceState = 'not-started' | 'working' | 'on-break' | 'finished';
+import type { AttendanceRecord, StaffStore } from '@/features/staff/types';
 
 export function AttendanceScreen() {
   const router = useRouter();
-  const theme = useAppTheme();
   const staff = useStaffIdentity();
-  const record = useActiveAttendanceRecord();
-  const assignments = useAssignments(1, 1);
-  const recordEvent = useRecordAttendanceEvent();
-  const [reason, setReason] = useState('');
-  const [locationIssue, setLocationIssue] = useState<AttendanceLocationEvidence['status'] | null>(
-    null,
+  const statuses = useAttendanceStoreStatuses();
+  const statusByStore = new Map(
+    (statuses.data ?? []).map((status) => [status.storeId, status.record]),
   );
-  const [now, setNow] = useState(() => new Date());
 
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1_000);
-    return () => clearInterval(timer);
-  }, []);
-
-  const attendanceState: AttendanceState = useMemo(() => {
-    if (!record.data) return 'not-started';
-    if (record.data.status !== 'open') return 'finished';
-    return record.data.isOnBreak ? 'on-break' : 'working';
-  }, [record.data]);
-
-  const status = {
-    'not-started': { label: '出勤前', tone: 'neutral' as const },
-    working: { label: '勤務中', tone: 'brand' as const },
-    'on-break': { label: '休憩中', tone: 'warning' as const },
-    finished: { label: '退勤済み', tone: 'info' as const },
-  }[attendanceState];
-  const todayShift = assignments.data?.find((shift) => shift.workDate === toDateKey(new Date()));
-  const currentTime = new Intl.DateTimeFormat('ja-JP', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-  }).format(now);
-
-  if (staff.isLoading || record.isLoading) {
+  if (staff.isLoading || statuses.isLoading) {
     return (
       <AppScreen>
-        <LoadingState label="勤怠状態を確認しています…" />
+        <LoadingState label="打刻できる店舗を確認しています…" />
       </AppScreen>
     );
   }
-  if (!staff.activeStore) {
+  if (staff.error || statuses.isError) {
     return (
       <AppScreen>
-        <EmptyState
-          title="打刻できる店舗がありません"
-          description="有効な店舗所属が見つかりません。管理者に所属状態を確認してもらってください。"
+        <ErrorState
+          message={staff.error?.message ?? statuses.error?.message ?? '店舗を読み込めませんでした。'}
+          onRetry={() => {
+            void staff.refresh();
+            void statuses.refetch();
+          }}
         />
       </AppScreen>
     );
   }
-  if (record.isError) {
-    return (
-      <AppScreen>
-        <ErrorState message={record.error.message} onRetry={() => void record.refetch()} />
-      </AppScreen>
-    );
-  }
-
-  const submit = async (
-    eventType: 'clock_in' | 'clock_out' | 'break_start' | 'break_end',
-  ) => {
-    const requiresLocation = eventType === 'clock_in' || eventType === 'clock_out';
-    const location: AttendanceLocationEvidence = requiresLocation
-      ? await getAttendanceLocation()
-      : { status: 'unavailable' };
-
-    if (requiresLocation && location.status !== 'ok' && !reason.trim()) {
-      setLocationIssue(location.status);
-      Alert.alert(
-        '理由を入力してください',
-        '位置情報を確認できない場合は、画面下の理由欄への入力が必要です。',
-      );
-      return;
-    }
-    if (location.status === 'ok') setLocationIssue(null);
-
-    recordEvent.mutate(
-      {
-        storeId: staff.activeStore!.id,
-        eventType,
-        gpsStatus: location.status,
-        gpsLat: location.latitude,
-        gpsLng: location.longitude,
-        gpsAccuracyMeters: location.accuracyMeters,
-        reason,
-      },
-      {
-        onSuccess: (result) => {
-          setReason('');
-          const needsReview = result.review_status === 'needs_review';
-          Alert.alert(
-            needsReview ? '打刻しました（要確認）' : '打刻しました',
-            needsReview
-              ? '位置情報または打刻条件を確認できなかったため、管理者の確認対象になりました。'
-              : '勤怠へ保存されました。',
-          );
-        },
-        onError: (error) => Alert.alert('打刻できませんでした', error.message),
-      },
-    );
-  };
 
   return (
     <AppScreen
-      refreshing={record.isFetching || assignments.isFetching}
+      refreshing={statuses.isFetching}
       onRefresh={() => {
-        void record.refetch();
-        void assignments.refetch();
+        void staff.refresh();
+        void statuses.refetch();
       }}>
       <PageIntro
         eyebrow="Attendance"
         title="打刻"
-        description={`${staff.activeStore.name}${
-          staff.activeStore.code ? ` · 店舗コード ${staff.activeStore.code}` : ''
-        }`}
-        trailing={<StatusPill label={status.label} tone={status.tone} />}
+        description="店舗での出勤/退勤を記録します。"
       />
 
-      <AttendanceProgress state={attendanceState} />
-
-      <SectionCard
-        style={{
-          overflow: 'hidden',
-          padding: 0,
-          gap: 0,
-          borderColor: '#94A3B8',
-          boxShadow: '0 14px 34px rgba(15, 23, 42, 0.14)',
-        }}>
-        <View
-          style={{
-            width: '100%',
-            alignItems: 'center',
-            paddingHorizontal: appSpacing.lg,
-            paddingVertical: appSpacing.xxl,
-            gap: appSpacing.xs,
-            backgroundColor: theme.hero,
-          }}>
-          <Text
-            selectable
-            style={{
-              color: theme.brandBright,
-              fontSize: 10,
-              fontWeight: '900',
-              letterSpacing: 1.8,
-              textTransform: 'uppercase',
-            }}>
-            Current time
-          </Text>
-          <Text
-            selectable
-            style={{
-              color: theme.heroText,
-              fontSize: 48,
-              fontWeight: '900',
-              fontVariant: ['tabular-nums'],
-              letterSpacing: -1.8,
-            }}>
-            {currentTime}
-          </Text>
-          <Text selectable style={{ color: theme.heroMuted, fontSize: 14, fontWeight: '700' }}>
-            {formatDateLabel(now, {
-              year: 'numeric',
-              month: 'long',
-              day: 'numeric',
-              weekday: 'long',
-            })}
-          </Text>
-        </View>
-
-        <View
-          style={{
-            width: '100%',
-            padding: appSpacing.lg,
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            gap: appSpacing.md,
-          }}>
-          <View style={{ flex: 1, gap: 3 }}>
-            <Text
-              selectable
-              style={{ color: theme.textSecondary, fontSize: 11, fontWeight: '900' }}>
-              本日の予定
-            </Text>
-            <Text
-              selectable
-              style={{
-                color: theme.text,
-                fontSize: 20,
-                fontWeight: '900',
-                fontVariant: ['tabular-nums'],
-              }}>
-              {todayShift
-                ? `${formatTime(todayShift.startAt)}–${formatTime(todayShift.endAt)}`
-                : '予定なし'}
-            </Text>
-          </View>
-          {todayShift?.roleLabel ? (
-            <StatusPill label={todayShift.roleLabel} tone="brand" />
-          ) : null}
-        </View>
-
-        <View
-          style={{
-            width: '100%',
-            paddingHorizontal: appSpacing.lg,
-            paddingBottom: appSpacing.lg,
-            flexDirection: 'row',
-            gap: appSpacing.sm,
-          }}>
-          {attendanceState === 'not-started' || attendanceState === 'finished' ? (
-            <>
-              <AttendanceActionButton
-                label={recordEvent.isPending ? '確認中…' : '出勤'}
-                englishLabel="CLOCK IN"
-                icon="sf:arrow.right.circle.fill"
-                disabled={recordEvent.isPending}
-                onPress={() => void submit('clock_in')}
-              />
-              <AttendanceActionButton
-                label="退勤"
-                englishLabel="CLOCK OUT"
-                icon="sf:arrow.left.circle"
-                disabled
-                tone="danger"
-                onPress={() => {}}
-              />
-            </>
-          ) : null}
-          {attendanceState === 'working' ? (
-            <>
-              <AttendanceActionButton
-                label="出勤済み"
-                englishLabel="CLOCKED IN"
-                icon="sf:checkmark.circle.fill"
-                disabled
-                onPress={() => {}}
-              />
-              <AttendanceActionButton
-                label={recordEvent.isPending ? '確認中…' : '退勤'}
-                englishLabel="CLOCK OUT"
-                icon="sf:arrow.left.circle.fill"
-                tone="danger"
-                disabled={recordEvent.isPending}
-                onPress={() => void submit('clock_out')}
-              />
-            </>
-          ) : null}
-          {attendanceState === 'on-break' ? (
-            <AttendanceActionButton
-                label="休憩を終了"
-                englishLabel="BACK TO WORK"
-                icon="sf:play.circle.fill"
-                disabled={recordEvent.isPending}
-                onPress={() => void submit('break_end')}
-              />
-          ) : null}
-        </View>
-
-        {attendanceState === 'working' ? (
-          <View style={{ width: '100%', paddingHorizontal: appSpacing.lg }}>
-            <NativeActionButton
-              label="休憩を開始"
-              variant="outlined"
-              disabled={recordEvent.isPending}
-              onPress={() => void submit('break_start')}
+      {staff.stores.length ? (
+        <View style={{ gap: appSpacing.md }}>
+          {staff.stores.map((store) => (
+            <AttendanceStoreCard
+              key={store.id}
+              store={store}
+              record={statusByStore.get(store.id) ?? null}
             />
-          </View>
-        ) : null}
-
-        <View
-          style={{
-            width: '100%',
-            flexDirection: 'row',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            padding: appSpacing.lg,
-            borderTopWidth: 1,
-            borderTopColor: theme.borderSoft,
-          }}>
-          <View style={{ gap: 2 }}>
-            <Text selectable style={{ color: theme.brandStrong, fontSize: 13, fontWeight: '900' }}>
-              位置情報を使用
-            </Text>
-            <Text selectable style={{ color: theme.textSecondary, fontSize: 11 }}>
-              出勤・退勤を押した時だけ取得
-            </Text>
-          </View>
-          <Text style={{ color: theme.brand, fontSize: 20, fontWeight: '900' }}>✓</Text>
+          ))}
         </View>
-      </SectionCard>
+      ) : (
+        <EmptyState
+          title="打刻できる店舗がありません"
+          description="有効な店舗所属がある場合に、この画面から打刻できます。"
+        />
+      )}
 
-      {locationIssue ? (
-        <SectionCard tone="warning">
-          <SectionHeading title="例外打刻の理由" />
-          <Text selectable style={{ color: theme.warning, fontSize: 13, lineHeight: 19 }}>
-            位置情報を確認できませんでした。理由を入力して、もう一度打刻してください。
-          </Text>
-          <TextInput
-            value={reason}
-            onChangeText={setReason}
-            maxLength={500}
-            multiline
-            placeholder="例: 店舗内ですが端末の位置情報を取得できません"
-            placeholderTextColor={theme.textSecondary}
-            style={{
-              minHeight: 88,
-              padding: appSpacing.lg,
-              borderRadius: appRadii.md,
-              borderCurve: 'continuous',
-              borderWidth: 1,
-              borderColor: '#FCD34D',
-              backgroundColor: theme.surface,
-              color: theme.text,
-              fontSize: 15,
-              textAlignVertical: 'top',
-            }}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="過去の打刻記録を確認・修正"
+        onPress={() => router.push('/attendance/records')}
+        style={({ pressed }) => ({
+          minHeight: 52,
+          alignSelf: 'center',
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: appSpacing.sm,
+          paddingHorizontal: appSpacing.lg,
+          borderRadius: appRadii.md,
+          borderCurve: 'continuous',
+          borderWidth: 1,
+          borderColor: '#CBD5E1',
+          backgroundColor: '#FFFFFF',
+          boxShadow: '0 4px 12px rgba(15, 23, 42, 0.10)',
+          opacity: pressed ? 0.72 : 1,
+        })}>
+        {process.env.EXPO_OS === 'ios' ? (
+          <SymbolView
+            name="clock.arrow.circlepath"
+            tintColor="#64748B"
+            style={{ width: 20, height: 20 }}
           />
-        </SectionCard>
-      ) : null}
-
-      {record.data?.reviewStatus === 'needs_review' ? (
-        <SectionCard tone="warning">
-          <Text selectable style={{ color: theme.warning, fontSize: 15, fontWeight: '700' }}>
-            管理者の確認が必要です
-          </Text>
-          {record.data.reviewRequiredReason ? (
-            <Text selectable style={{ color: theme.textSecondary, fontSize: 14 }}>
-              {record.data.reviewRequiredReason}
-            </Text>
-          ) : null}
-        </SectionCard>
-      ) : null}
-
-      <NativeActionButton
-        label="打刻の修正について確認"
-        variant="text"
-        onPress={() => router.push('/attendance-adjustment')}
-      />
+        ) : (
+          <Text style={{ color: '#64748B', fontSize: 18 }}>◷</Text>
+        )}
+        <Text style={{ color: '#475569', fontSize: 14, fontWeight: '900' }}>
+          過去の打刻記録を確認・修正
+        </Text>
+      </Pressable>
     </AppScreen>
   );
 }
 
-function AttendanceActionButton({
-  label,
-  englishLabel,
-  icon,
-  tone = 'brand',
-  disabled = false,
-  onPress,
+function AttendanceStoreCard({
+  store,
+  record,
 }: {
-  label: string;
-  englishLabel: string;
-  icon: `sf:${string}`;
-  tone?: 'brand' | 'danger';
-  disabled?: boolean;
-  onPress: () => void;
+  store: StaffStore;
+  record: AttendanceRecord | null;
 }) {
+  const router = useRouter();
   const theme = useAppTheme();
-  const foreground = tone === 'danger' ? theme.danger : theme.brandStrong;
-  const background = tone === 'danger' ? theme.dangerSoft : theme.brandSoft;
+  const recordEvent = useRecordAttendanceEvent();
+  const [isCheckingLocation, setIsCheckingLocation] = useState(false);
+  const isWorking = Boolean(record);
+  const openDetail = () => router.push(`/attendance/${store.id}`);
+
+  const quickClock = async () => {
+    if (isCheckingLocation || recordEvent.isPending) return;
+    setIsCheckingLocation(true);
+    const location = await getAttendanceLocation();
+    setIsCheckingLocation(false);
+
+    if (
+      location.status !== 'ok' ||
+      location.latitude == null ||
+      location.longitude == null
+    ) {
+      Alert.alert(
+        '位置情報を確認できません',
+        '要確認の理由を選択するため、店舗別の詳細打刻画面へ移動します。',
+        [{ text: '詳細へ進む', onPress: openDetail }],
+      );
+      return;
+    }
+
+    const distance =
+      store.attendanceLat != null && store.attendanceLng != null
+        ? calculateDistanceMeters(
+            location.latitude,
+            location.longitude,
+            store.attendanceLat,
+            store.attendanceLng,
+          )
+        : null;
+    if (distance != null && distance > store.attendanceGpsRadiusMeters) {
+      Alert.alert(
+        '店舗付近ではありません',
+        `現在地から約${Math.round(distance)}m離れています。理由を選択して打刻してください。`,
+        [{ text: '詳細へ進む', onPress: openDetail }],
+      );
+      return;
+    }
+
+    recordEvent.mutate(
+      {
+        storeId: store.id,
+        eventType: isWorking ? 'clock_out' : 'clock_in',
+        gpsStatus: 'ok',
+        gpsLat: location.latitude,
+        gpsLng: location.longitude,
+        gpsAccuracyMeters: location.accuracyMeters,
+      },
+      {
+        onSuccess: () => {
+          if (process.env.EXPO_OS === 'ios') {
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }
+          Alert.alert(
+            isWorking ? '退勤を記録しました' : '出勤を記録しました',
+            `${store.name}の勤怠へ保存されました。`,
+          );
+        },
+        onError: (error) => {
+          const needsDetail = /reason required|GPS|位置情報|範囲外/i.test(error.message);
+          Alert.alert(
+            '一覧から打刻できませんでした',
+            needsDetail
+              ? '位置情報の確認が必要です。店舗別の詳細打刻画面から理由を選択してください。'
+              : error.message,
+            needsDetail ? [{ text: '詳細へ進む', onPress: openDetail }] : undefined,
+          );
+        },
+      },
+    );
+  };
+
+  const isBusy = isCheckingLocation || recordEvent.isPending;
 
   return (
-    <Pressable
-      accessibilityRole="button"
-      disabled={disabled}
-      onPress={() => {
-        if (process.env.EXPO_OS === 'ios') {
-          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        }
-        onPress();
-      }}
-      style={({ pressed }) => ({
-        flex: 1,
-        minHeight: 82,
-        padding: appSpacing.md,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: appSpacing.sm,
+    <View
+      style={{
+        padding: appSpacing.lg,
+        gap: appSpacing.md,
         borderRadius: appRadii.lg,
         borderCurve: 'continuous',
-        borderWidth: 2,
-        borderColor: disabled ? theme.borderSoft : foreground,
-        backgroundColor: disabled ? theme.surfaceMuted : background,
-        opacity: pressed ? 0.72 : disabled ? 0.58 : 1,
-      })}>
-      {process.env.EXPO_OS === 'ios' ? (
-        <Image
-          source={icon}
-          tintColor={disabled ? theme.textSecondary : foreground}
-          style={{ width: 28, height: 28 }}
-        />
-      ) : (
-        <Text style={{ color: disabled ? theme.textSecondary : foreground, fontSize: 24 }}>→</Text>
-      )}
-      <View style={{ gap: 1 }}>
-        <Text
+        borderWidth: 1,
+        borderColor: '#FFFFFF',
+        backgroundColor: theme.surface,
+        boxShadow: '0 12px 26px rgba(51, 65, 85, 0.22)',
+      }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: appSpacing.md }}>
+        <View
           style={{
-            color: disabled ? theme.textSecondary : theme.text,
-            fontSize: 17,
-            fontWeight: '900',
+            width: 48,
+            height: 48,
+            alignItems: 'center',
+            justifyContent: 'center',
+            borderRadius: appRadii.md,
+            borderCurve: 'continuous',
+            backgroundColor: theme.brandSoft,
           }}>
-          {label}
-        </Text>
-        <Text
-          style={{
-            color: disabled ? theme.textSecondary : foreground,
-            fontSize: 10,
-            fontWeight: '900',
-            letterSpacing: 0.5,
-          }}>
-          {englishLabel}
-        </Text>
+          {process.env.EXPO_OS === 'ios' ? (
+            <SymbolView
+              name="storefront"
+              tintColor={theme.brandStrong}
+              style={{ width: 25, height: 25 }}
+            />
+          ) : (
+            <Text style={{ color: theme.brandStrong, fontSize: 22 }}>店</Text>
+          )}
+        </View>
+
+        <View style={{ minWidth: 0, flex: 1, gap: 2 }}>
+          <Text
+            selectable
+            numberOfLines={1}
+            style={{ color: theme.text, fontSize: 19, fontWeight: '900' }}>
+            {store.name}
+          </Text>
+          <Text
+            selectable
+            numberOfLines={1}
+            style={{ color: theme.textSecondary, fontSize: 13 }}>
+            {store.code || 'コード未設定'}
+          </Text>
+        </View>
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${store.name}で${isWorking ? '退勤' : '出勤'}する`}
+          disabled={isBusy}
+          onPress={() => void quickClock()}
+          style={({ pressed }) => ({
+            minWidth: 142,
+            minHeight: 52,
+            flexDirection: 'row',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: appSpacing.sm,
+            paddingHorizontal: appSpacing.lg,
+            borderRadius: appRadii.lg,
+            borderCurve: 'continuous',
+            backgroundColor: isWorking ? theme.danger : theme.brand,
+            boxShadow: isWorking
+              ? '0 8px 18px rgba(225, 29, 72, 0.24)'
+              : '0 8px 18px rgba(5, 150, 105, 0.28)',
+            opacity: isBusy ? 0.5 : pressed ? 0.75 : 1,
+          })}>
+          {process.env.EXPO_OS === 'ios' ? (
+            <SymbolView
+              name={isWorking ? 'arrow.left.circle.fill' : 'rectangle.portrait.and.arrow.right'}
+              tintColor="#FFFFFF"
+              style={{ width: 21, height: 21 }}
+            />
+          ) : (
+            <Text style={{ color: '#FFFFFF', fontSize: 20 }}>→</Text>
+          )}
+          <Text style={{ color: '#FFFFFF', fontSize: 16, fontWeight: '900' }}>
+            {isBusy ? '確認中…' : isWorking ? '退勤' : '出勤'}
+          </Text>
+        </Pressable>
       </View>
-    </Pressable>
-  );
-}
 
-function AttendanceProgress({ state }: { state: AttendanceState }) {
-  const theme = useAppTheme();
-  const currentStep = state === 'not-started' ? 2 : state === 'working' || state === 'on-break' ? 3 : 4;
-  const steps = ['店舗', '位置情報', '打刻', '完了'];
-
-  return (
-    <View style={{ flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 2 }}>
-      {steps.map((label, index) => {
-        const step = index + 1;
-        const active = step <= currentStep;
-        return (
-          <View key={label} style={{ flex: 1, alignItems: 'center' }}>
-            <View style={{ width: '100%', flexDirection: 'row', alignItems: 'center' }}>
-              <View
-                style={{
-                  flex: 1,
-                  height: 2,
-                  backgroundColor: index === 0 ? 'transparent' : active ? theme.brand : theme.border,
-                }}
-              />
-              <View
-                style={{
-                  width: 28,
-                  height: 28,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  borderRadius: 14,
-                  borderWidth: 2,
-                  borderColor: active ? theme.brand : theme.border,
-                  backgroundColor: active ? theme.brandSoft : theme.surface,
-                }}>
-                <Text
-                  style={{
-                    color: active ? theme.brandStrong : theme.textSecondary,
-                    fontSize: 11,
-                    fontWeight: '900',
-                  }}>
-                  {step}
-                </Text>
-              </View>
-              <View
-                style={{
-                  flex: 1,
-                  height: 2,
-                  backgroundColor:
-                    index === steps.length - 1
-                      ? 'transparent'
-                      : step < currentStep
-                        ? theme.brand
-                        : theme.border,
-                }}
-              />
-            </View>
-            <Text
-              selectable
-              style={{
-                marginTop: 5,
-                color: active ? theme.text : theme.textSecondary,
-                fontSize: 10,
-                fontWeight: '800',
-              }}>
-              {label}
-            </Text>
-          </View>
-        );
-      })}
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: appSpacing.sm }}>
+        <View
+          style={{
+            paddingHorizontal: appSpacing.md,
+            paddingVertical: 5,
+            borderRadius: appRadii.pill,
+            backgroundColor: isWorking ? theme.dangerSoft : theme.brandSoft,
+          }}>
+          <Text
+            style={{
+              color: isWorking ? theme.danger : theme.brandStrong,
+              fontSize: 12,
+              fontWeight: '900',
+            }}>
+            {isWorking ? '出勤中' : '未出勤'}
+          </Text>
+        </View>
+        <Pressable
+          accessibilityRole="link"
+          hitSlop={8}
+          onPress={openDetail}
+          style={({ pressed }) => ({
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 3,
+            opacity: pressed ? 0.55 : 1,
+          })}>
+          <Text style={{ color: theme.textSecondary, fontSize: 12, fontWeight: '900' }}>
+            詳細
+          </Text>
+          <Image
+            source="sf:arrow.up.right"
+            tintColor={theme.textSecondary}
+            style={{ width: 12, height: 12 }}
+          />
+        </Pressable>
+      </View>
     </View>
   );
 }

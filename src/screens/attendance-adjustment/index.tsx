@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Alert, Pressable, Text, TextInput, View } from 'react-native';
 
 import { AppScreen } from '@/components/ui/app-screen';
+import { TabStackBackButton } from '@/components/navigation/tab-stack-back-button';
 import { NativeActionButton } from '@/components/ui/native-action-button';
 import { SectionCard } from '@/components/ui/section-card';
 import { appRadii, appSpacing, useAppTheme } from '@/constants/app-theme';
@@ -79,6 +80,7 @@ export function AttendanceAdjustmentScreen() {
 
   return (
     <AppScreen contentContainerStyle={{ paddingTop: appSpacing.xl }}>
+      <TabStackBackButton fallback="/(staff)/(attendance)" label="打刻履歴" />
       <Text selectable style={{ color: theme.textSecondary, fontSize: 14, lineHeight: 20 }}>
         打刻漏れがあった勤務を後から入力します。既存の勤怠と重なる時間は保存できず、保存した内容は管理者の確認対象になります。
       </Text>

@@ -1,6 +1,7 @@
 import { Alert, Text, View } from 'react-native';
 
 import { AppScreen } from '@/components/ui/app-screen';
+import { TabStackBackButton } from '@/components/navigation/tab-stack-back-button';
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/data-state';
 import { NativeActionButton } from '@/components/ui/native-action-button';
 import { SectionCard } from '@/components/ui/section-card';
@@ -49,6 +50,7 @@ export function HelpScreen() {
 
   return (
     <AppScreen refreshing={requests.isFetching} onRefresh={() => void requests.refetch()}>
+      <TabStackBackButton fallback="/(staff)/(home)" label="ホーム" />
       {requests.data?.length ? (
         requests.data.map((request) => (
           <SectionCard key={request.id} tone={request.applicationId ? 'brand' : undefined}>

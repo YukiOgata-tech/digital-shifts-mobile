@@ -72,6 +72,17 @@ export type StorePublishedSchedule = {
   assignments: StoreScheduleAssignment[];
 };
 
+export type PublishedSchedulePeriod = {
+  id: string;
+  storeId: string;
+  storeName: string;
+  periodId: string;
+  name: string;
+  startDate: string;
+  endDate: string;
+  yearMonth: string;
+};
+
 export type ShiftAdjustmentRequestType =
   | 'change_time'
   | 'unavailable'
@@ -112,21 +123,39 @@ export type ShiftRequestEntry = {
   isAllDay: boolean;
   startAt: string | null;
   endAt: string | null;
+  timeSlotId: string | null;
   note: string | null;
+};
+
+export type ShiftTimeSlot = {
+  id: string;
+  name: string;
+  shortLabel: string;
+  startTime: string;
+  endTime: string;
+  color: string;
+};
+
+export type ShiftPeriodClosedDay = {
+  workDate: string;
+  reason: string | null;
 };
 
 export type OpenShiftPeriod = {
   id: string;
   storeId: string;
   storeName: string;
+  storeTimezone: string;
   name: string;
   startDate: string;
   endDate: string;
   requestDeadlineAt: string;
+  useTimeSlots: boolean;
   requestId: string | null;
   submittedAt: string | null;
   entries: ShiftRequestEntry[];
-  closedDates: string[];
+  closedDays: ShiftPeriodClosedDay[];
+  timeSlots: ShiftTimeSlot[];
 };
 
 export type StaffNotification = {
@@ -157,6 +186,7 @@ export type HelpRequest = {
 export type AttendanceRecord = {
   id: string;
   storeId: string;
+  storeName?: string;
   workDate: string;
   clockInAt: string;
   clockOutAt: string | null;
@@ -165,6 +195,11 @@ export type AttendanceRecord = {
   reviewStatus: string | null;
   reviewRequiredReason: string | null;
   isOnBreak: boolean;
+};
+
+export type AttendanceStoreStatus = {
+  storeId: string;
+  record: AttendanceRecord | null;
 };
 
 export type NotificationPreferences = {

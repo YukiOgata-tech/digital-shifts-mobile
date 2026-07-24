@@ -1,262 +1,234 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import * as Linking from 'expo-linking';
-import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Alert, Switch, Text, TextInput, View } from 'react-native';
+import { Alert, Text, TextInput, View } from 'react-native';
 
+import { TabStackBackButton } from '@/components/navigation/tab-stack-back-button';
 import { AppScreen } from '@/components/ui/app-screen';
 import { ErrorState, LoadingState } from '@/components/ui/data-state';
-import { ListRow } from '@/components/ui/list-row';
 import { NativeActionButton } from '@/components/ui/native-action-button';
-import { PageIntro } from '@/components/ui/page-intro';
 import { SectionCard } from '@/components/ui/section-card';
-import { StatusPill } from '@/components/ui/status-pill';
 import { appRadii, appSpacing, useAppTheme } from '@/constants/app-theme';
-import {
-  disablePushNotifications,
-  isCurrentDevicePushEnabled,
-  registerPushNotifications,
-} from '@/features/notifications/push';
-import {
-  useNotificationPreferences,
-  useStaffIdentity,
-  useUpdateNotificationPreferences,
-  useUpdateStaffProfile,
-} from '@/features/staff/queries';
-import type { NotificationPreferences } from '@/features/staff/types';
+import { useSession } from '@/features/auth/session-provider';
+import { useStaffIdentity, useUpdateStaffProfile } from '@/features/staff/queries';
 import { env } from '@/lib/env';
 import { supabase } from '@/lib/supabase';
 
+type EmailStep = 'input' | 'otp';
+
 export function ProfileScreen() {
-  const router = useRouter();
   const theme = useAppTheme();
-  const queryClient = useQueryClient();
+  const { session } = useSession();
   const staff = useStaffIdentity();
-  const preferences = useNotificationPreferences();
-  const updatePreferences = useUpdateNotificationPreferences();
   const updateProfile = useUpdateStaffProfile();
   const [profileDraft, setProfileDraft] = useState<{
     profileId: string;
     displayName: string;
     phoneNumber: string;
   } | null>(null);
-  const displayName =
-    profileDraft && profileDraft.profileId === staff.profile?.id
-      ? profileDraft.displayName
-      : (staff.profile?.displayName ?? '');
-  const phoneNumber =
-    profileDraft && profileDraft.profileId === staff.profile?.id
-      ? profileDraft.phoneNumber
-      : (staff.profile?.phoneNumber ?? '');
-  const pushStatus = useQuery({
-    queryKey: ['push-status', staff.userId, staff.tenantId],
-    queryFn: () =>
-      isCurrentDevicePushEnabled({
-        userId: staff.userId!,
-        tenantId: staff.tenantId!,
-      }),
-    enabled: Boolean(staff.userId && staff.tenantId && env.pushNotificationsEnabled),
-  });
-  const pushMutation = useMutation({
-    mutationFn: async (enabled: boolean) => {
-      if (!staff.userId || !staff.tenantId) throw new Error('所属情報を確認できません。');
-      if (enabled) {
-        await registerPushNotifications({
-          userId: staff.userId,
-          tenantId: staff.tenantId,
-          requestPermission: true,
-        });
-      } else {
-        await disablePushNotifications({
-          userId: staff.userId,
-          tenantId: staff.tenantId,
-        });
-      }
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['push-status'] }),
-  });
+  const [emailStep, setEmailStep] = useState<EmailStep>('input');
+  const [newEmail, setNewEmail] = useState('');
+  const [otp, setOtp] = useState('');
+  const [authPending, setAuthPending] = useState(false);
 
-  const openWebPath = async (path: string, label: string) => {
-    if (!env.webAppUrl) {
-      Alert.alert(`${label}を開けません`, 'WEBアプリURLが設定されていません。');
-      return;
-    }
-    const url = new URL(path, env.webAppUrl).toString();
-    if (!(await Linking.canOpenURL(url))) {
-      Alert.alert(`${label}を開けません`, url);
-      return;
-    }
-    await Linking.openURL(url);
-  };
-
-  const signOut = async () => {
-    if (supabase) {
-      const { error } = await supabase.auth.signOut();
-      if (error) {
-        Alert.alert('ログアウトできませんでした', error.message);
-        return;
-      }
-    }
-    router.replace('/(auth)/sign-in');
-  };
-
-  const update = (patch: Partial<NotificationPreferences>) => {
-    if (!preferences.data) return;
-    updatePreferences.mutate(
-      { ...preferences.data, ...patch },
-      {
-        onError: (error) => Alert.alert('通知設定を保存できませんでした', error.message),
-      },
-    );
-  };
-
-  if (staff.isLoading || preferences.isLoading) {
+  if (staff.isLoading) {
     return (
       <AppScreen>
-        <LoadingState label="設定を読み込んでいます…" />
+        <LoadingState label="アカウントを読み込んでいます…" />
       </AppScreen>
     );
   }
-  if (staff.error || preferences.isError) {
+  if (staff.error || !staff.profile || !session?.user) {
     return (
       <AppScreen>
         <ErrorState
-          message={staff.error?.message ?? preferences.error?.message}
-          onRetry={() => {
-            void staff.refresh();
-            void preferences.refetch();
-          }}
+          message={staff.error?.message ?? 'アカウント情報を確認できませんでした。'}
+          onRetry={() => void staff.refresh()}
         />
       </AppScreen>
     );
   }
 
+  const user = session.user;
+  const currentEmail = user.email ?? staff.profile.email ?? '';
+  const displayName =
+    profileDraft?.profileId === staff.profile.id
+      ? profileDraft.displayName
+      : staff.profile.displayName;
+  const phoneNumber =
+    profileDraft?.profileId === staff.profile.id
+      ? profileDraft.phoneNumber
+      : (staff.profile.phoneNumber ?? '');
+
+  const sendReauthenticationCode = async () => {
+    if (!supabase) throw new Error('Supabaseが設定されていません。');
+    const normalizedEmail = newEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      throw new Error('新しいメールアドレスを正しく入力してください。');
+    }
+    if (normalizedEmail === currentEmail.toLowerCase()) {
+      throw new Error('現在と異なるメールアドレスを入力してください。');
+    }
+    const { error } = await supabase.auth.reauthenticate();
+    if (error) throw error;
+    setNewEmail(normalizedEmail);
+    setEmailStep('otp');
+    setOtp('');
+  };
+
+  const requestEmailChange = async () => {
+    if (!supabase) throw new Error('Supabaseが設定されていません。');
+    if (!/^\d{6}$/.test(otp)) {
+      throw new Error('確認コードは6桁で入力してください。');
+    }
+    if (!env.webAppUrl) {
+      throw new Error('EXPO_PUBLIC_WEB_APP_URLが未設定です。');
+    }
+    const emailRedirectTo = new URL(
+      '/auth/callback?next=/app/settings/account',
+      env.webAppUrl,
+    ).toString();
+    const { error } = await supabase.auth.updateUser(
+      { email: newEmail, nonce: otp },
+      { emailRedirectTo },
+    );
+    if (error) throw error;
+    setEmailStep('input');
+    setNewEmail('');
+    setOtp('');
+    Alert.alert(
+      '確認メールを送信しました',
+      `新しいメールアドレス（${newEmail}）に届くリンクを開いて変更を完了してください。`,
+    );
+  };
+
+  const sendPasswordReset = async () => {
+    if (!supabase) throw new Error('Supabaseが設定されていません。');
+    if (!currentEmail) throw new Error('メールアドレスを確認できません。');
+    if (!env.webAppUrl) throw new Error('EXPO_PUBLIC_WEB_APP_URLが未設定です。');
+    const redirectTo = new URL(
+      '/auth/callback?next=/auth/reset-password',
+      env.webAppUrl,
+    ).toString();
+    const { error } = await supabase.auth.resetPasswordForEmail(currentEmail, {
+      redirectTo,
+    });
+    if (error) throw error;
+    Alert.alert(
+      'リセットメールを送信しました',
+      `${currentEmail}に届くリンクから新しいパスワードを設定してください。`,
+    );
+  };
+
+  const runAuthAction = async (action: () => Promise<void>, title: string) => {
+    setAuthPending(true);
+    try {
+      await action();
+    } catch (error) {
+      Alert.alert(title, error instanceof Error ? error.message : 'もう一度お試しください。');
+    } finally {
+      setAuthPending(false);
+    }
+  };
+
   return (
-    <AppScreen
-      refreshing={preferences.isFetching || pushStatus.isFetching}
-      onRefresh={() => {
-        void preferences.refetch();
-        void pushStatus.refetch();
-      }}>
-      <PageIntro
-        eyebrow="Settings"
-        title="設定"
-        description="アカウント、所属店舗、通知とアプリの利用設定を管理します。"
-      />
+    <AppScreen contentContainerStyle={{ paddingTop: appSpacing.sm }}>
+      <TabStackBackButton fallback="/(staff)/(settings)" label="設定" />
+      <View style={{ paddingHorizontal: appSpacing.xs, gap: 2 }}>
+        <Text style={{ color: theme.brandStrong, fontSize: 10, fontWeight: '900', letterSpacing: 1.7 }}>
+          ACCOUNT
+        </Text>
+        <Text style={{ color: theme.text, fontSize: 26, fontWeight: '900' }}>アカウント</Text>
+      </View>
 
       <View
         style={{
           padding: appSpacing.lg,
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: appSpacing.md,
+          gap: appSpacing.lg,
           borderRadius: appRadii.lg,
           borderCurve: 'continuous',
           backgroundColor: theme.hero,
-          boxShadow: '0 14px 32px rgba(2, 6, 23, 0.22)',
+          boxShadow: '0 16px 32px rgba(2, 6, 23, 0.22)',
         }}>
-        <View
-          style={{
-            width: 54,
-            height: 54,
-            alignItems: 'center',
-            justifyContent: 'center',
-            borderRadius: appRadii.pill,
-            backgroundColor: theme.brandBright,
-          }}>
-          <Text style={{ color: theme.hero, fontSize: 22, fontWeight: '900' }}>
-            {(staff.profile?.displayName ?? staff.profile?.email ?? 'ス').slice(0, 1)}
-          </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: appSpacing.md }}>
+          <View
+            style={{
+              width: 58,
+              height: 58,
+              alignItems: 'center',
+              justifyContent: 'center',
+              borderRadius: appRadii.md,
+              backgroundColor: theme.brandBright,
+            }}>
+            <Text style={{ color: theme.hero, fontSize: 25, fontWeight: '900' }}>
+              {(displayName || currentEmail || 'ス').slice(0, 1).toUpperCase()}
+            </Text>
+          </View>
+          <View style={{ flex: 1, gap: 3 }}>
+            <Text numberOfLines={1} style={{ color: theme.heroText, fontSize: 20, fontWeight: '900' }}>
+              {displayName}
+            </Text>
+            <Text numberOfLines={1} style={{ color: theme.heroMuted, fontSize: 12 }}>
+              {currentEmail}
+            </Text>
+            <Text style={{ color: theme.brandBright, fontSize: 11, fontWeight: '900', textTransform: 'uppercase' }}>
+              {staff.activeTenant?.role ?? 'staff'}
+            </Text>
+          </View>
         </View>
-        <View style={{ flex: 1, gap: 3 }}>
-          <Text
-            selectable
-            numberOfLines={1}
-            style={{ color: theme.heroText, fontSize: 18, fontWeight: '900' }}>
-            {staff.profile?.displayName ?? 'スタッフ'}
-          </Text>
-          <Text
-            selectable
-            numberOfLines={1}
-            style={{ color: theme.heroMuted, fontSize: 12 }}>
-            {staff.profile?.email}
-          </Text>
-          <Text
-            selectable
-            numberOfLines={1}
-            style={{ color: theme.brandBright, fontSize: 11, fontWeight: '800' }}>
-            {staff.activeTenant?.role ?? 'staff'} · {staff.activeTenant?.name}
-          </Text>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: appSpacing.sm }}>
+          <AccountMetric
+            label="メール確認"
+            value={user.email_confirmed_at ? '確認済み' : '未確認'}
+            accent={Boolean(user.email_confirmed_at)}
+          />
+          <AccountMetric
+            label="最終ログイン"
+            value={
+              user.last_sign_in_at
+                ? new Intl.DateTimeFormat('ja-JP', {
+                    year: 'numeric',
+                    month: 'numeric',
+                    day: 'numeric',
+                  }).format(new Date(user.last_sign_in_at))
+                : '不明'
+            }
+          />
+          <AccountMetric label="電話番号" value={staff.profile.phoneNumber || '未設定'} />
+          <AccountMetric label="タイムゾーン" value={staff.profile.timezone || 'Asia/Tokyo'} />
         </View>
-        <StatusPill
-          label={
-            staff.activeTenant?.role === 'owner'
-              ? 'オーナー'
-              : staff.activeTenant?.role === 'manager'
-                ? '管理者'
-                : 'スタッフ'
-          }
-          tone="brand"
-        />
       </View>
 
-      <SettingsGroupHeading eyebrow="Account" title="プロフィール" />
       <SectionCard>
-        <View style={{ gap: appSpacing.sm }}>
-          <Text selectable style={{ color: theme.textSecondary, fontSize: 13 }}>
-            表示名
-          </Text>
-          <TextInput
-            value={displayName}
-            onChangeText={(value) =>
-              setProfileDraft({
-                profileId: staff.profile!.id,
-                displayName: value,
-                phoneNumber,
-              })
-            }
-            maxLength={100}
-            placeholder="表示名"
-            placeholderTextColor={theme.textSecondary}
-            style={{
-              minHeight: 48,
-              paddingHorizontal: appSpacing.md,
-              borderRadius: appRadii.sm,
-              backgroundColor: theme.surfaceMuted,
-              color: theme.text,
-              fontSize: 16,
-            }}
-          />
-        </View>
-        <View style={{ gap: appSpacing.sm }}>
-          <Text selectable style={{ color: theme.textSecondary, fontSize: 13 }}>
-            電話番号
-          </Text>
-          <TextInput
-            value={phoneNumber}
-            onChangeText={(value) =>
-              setProfileDraft({
-                profileId: staff.profile!.id,
-                displayName,
-                phoneNumber: value,
-              })
-            }
-            maxLength={30}
-            keyboardType="phone-pad"
-            placeholder="電話番号（任意）"
-            placeholderTextColor={theme.textSecondary}
-            style={{
-              minHeight: 48,
-              paddingHorizontal: appSpacing.md,
-              borderRadius: appRadii.sm,
-              backgroundColor: theme.surfaceMuted,
-              color: theme.text,
-              fontSize: 16,
-            }}
-          />
-        </View>
+        <SectionTitle title="プロフィール編集" />
+        <FieldLabel label="表示名" required />
+        <SettingsInput
+          value={displayName}
+          maxLength={50}
+          placeholder="表示名"
+          onChangeText={(value) =>
+            setProfileDraft({
+              profileId: staff.profile!.id,
+              displayName: value,
+              phoneNumber,
+            })
+          }
+        />
+        <FieldLabel label="電話番号" />
+        <SettingsInput
+          value={phoneNumber}
+          maxLength={20}
+          keyboardType="phone-pad"
+          placeholder="090-0000-0000"
+          onChangeText={(value) =>
+            setProfileDraft({
+              profileId: staff.profile!.id,
+              displayName,
+              phoneNumber: value,
+            })
+          }
+        />
         <NativeActionButton
-          label={updateProfile.isPending ? '保存中…' : 'プロフィールを保存'}
+          label={updateProfile.isPending ? '保存中…' : '保存する'}
+          tone="dark"
           disabled={updateProfile.isPending || !displayName.trim()}
           onPress={() =>
             updateProfile.mutate(
@@ -264,168 +236,206 @@ export function ProfileScreen() {
               {
                 onSuccess: () => {
                   setProfileDraft(null);
-                  Alert.alert('保存しました');
+                  Alert.alert('プロフィールを保存しました');
                 },
-                onError: (error) => Alert.alert('プロフィールを保存できませんでした', error.message),
+                onError: (error) =>
+                  Alert.alert('プロフィールを保存できませんでした', error.message),
               },
             )
           }
         />
       </SectionCard>
 
-      {staff.tenants.length > 1 ? (
-        <View style={{ gap: appSpacing.sm }}>
-          <SettingsGroupHeading eyebrow="Organization" title="利用する組織" />
-          {staff.tenants.map((tenant) => (
-            <ListRow
-              key={tenant.id}
-              title={tenant.name}
-              subtitle={tenant.role === 'staff' ? 'スタッフ' : '管理者'}
-              trailing={
-                tenant.id === staff.activeTenant?.id ? (
-                  <StatusPill label="選択中" tone="brand" />
-                ) : undefined
-              }
-              onPress={() => staff.setActiveTenantId(tenant.id)}
-            />
-          ))}
-        </View>
-      ) : null}
-
-      {staff.stores.length > 1 ? (
-        <View style={{ gap: appSpacing.sm }}>
-          <SettingsGroupHeading eyebrow="Stores" title="利用する店舗" />
-          {staff.stores.map((store) => (
-            <ListRow
-              key={store.id}
-              title={store.name}
-              subtitle={store.address ?? store.code ?? undefined}
-              trailing={
-                store.id === staff.activeStore?.id ? (
-                  <StatusPill label="選択中" tone="brand" />
-                ) : undefined
-              }
-              onPress={() => staff.setActiveStoreId(store.id)}
-            />
-          ))}
-        </View>
-      ) : null}
-
-      <View style={{ gap: appSpacing.sm }}>
-        <SettingsGroupHeading eyebrow="Notifications" title="通知設定" />
-        <ListRow
-          title="アプリ内通知"
-          subtitle="シフト公開、申請結果などを通知一覧に表示"
-          trailing={
-            <Switch
-              value={preferences.data?.inAppEnabled ?? true}
-              disabled={updatePreferences.isPending}
-              onValueChange={(value) => update({ inAppEnabled: value })}
-            />
-          }
+      <SectionCard>
+        <SectionTitle
+          title="メールアドレス変更"
+          description="本人確認後、新しいアドレスへ確認メールを送信します。"
         />
-        <ListRow
-          title="Push通知"
-          subtitle={
-            env.pushNotificationsEnabled
-              ? 'この端末へ重要な更新をお知らせ'
-              : 'EAS Project ID設定後に利用できます'
-          }
-          trailing={
-            <Switch
-              value={pushStatus.data ?? false}
-              disabled={!env.pushNotificationsEnabled || pushMutation.isPending}
-              onValueChange={(value) =>
-                pushMutation.mutate(value, {
-                  onError: (error) => Alert.alert('Push通知を変更できませんでした', error.message),
-                })
+        <FieldLabel label="現在のメールアドレス" />
+        <ReadOnlyValue value={currentEmail} />
+        {emailStep === 'input' ? (
+          <>
+            <FieldLabel label="新しいメールアドレス" required />
+            <SettingsInput
+              value={newEmail}
+              autoCapitalize="none"
+              autoComplete="email"
+              keyboardType="email-address"
+              placeholder="new@example.com"
+              onChangeText={setNewEmail}
+            />
+            <NativeActionButton
+              label={authPending ? '送信中…' : '確認コードを送信'}
+              tone="dark"
+              disabled={authPending || !newEmail.trim()}
+              onPress={() =>
+                void runAuthAction(sendReauthenticationCode, '確認コードを送信できませんでした')
               }
             />
-          }
-        />
-        <ListRow
-          title="シフト公開"
-          subtitle="新しい確定シフトが公開された時"
-          trailing={
-            <Switch
-              value={preferences.data?.shiftPublishedEnabled ?? true}
-              disabled={updatePreferences.isPending}
-              onValueChange={(value) => update({ shiftPublishedEnabled: value })}
+          </>
+        ) : (
+          <>
+            <View
+              style={{
+                padding: appSpacing.md,
+                borderRadius: appRadii.md,
+                backgroundColor: theme.infoSoft,
+              }}>
+              <Text style={{ color: theme.info, fontSize: 12, fontWeight: '700', lineHeight: 18 }}>
+                {currentEmail} に届いた6桁の確認コードを入力してください。
+              </Text>
+            </View>
+            <FieldLabel label="確認コード" required />
+            <SettingsInput
+              value={otp}
+              maxLength={6}
+              keyboardType="number-pad"
+              placeholder="000000"
+              onChangeText={(value) => setOtp(value.replace(/\D/g, ''))}
             />
-          }
-        />
-        <ListRow
-          title="シフト変更"
-          subtitle="確定シフトが変更された時"
-          trailing={
-            <Switch
-              value={preferences.data?.shiftChangedEnabled ?? true}
-              disabled={updatePreferences.isPending}
-              onValueChange={(value) => update({ shiftChangedEnabled: value })}
+            <Text style={{ color: theme.danger, fontSize: 12, fontWeight: '700', lineHeight: 18 }}>
+              {currentEmail} → {newEmail}
+            </Text>
+            <NativeActionButton
+              label={authPending ? '変更中…' : 'メールアドレスを変更'}
+              tone="danger"
+              disabled={authPending || otp.length !== 6}
+              onPress={() =>
+                void runAuthAction(requestEmailChange, 'メールアドレスを変更できませんでした')
+              }
             />
-          }
-        />
-        <ListRow
-          title="ヘルプ募集"
-          subtitle="所属店舗で応援募集が作成された時"
-          trailing={
-            <Switch
-              value={preferences.data?.helpRequestedEnabled ?? true}
-              disabled={updatePreferences.isPending}
-              onValueChange={(value) => update({ helpRequestedEnabled: value })}
+            <NativeActionButton
+              label="キャンセル"
+              variant="text"
+              disabled={authPending}
+              onPress={() => {
+                setEmailStep('input');
+                setOtp('');
+              }}
             />
-          }
-        />
-        <ListRow
-          title="メール通知"
-          subtitle="契約プラン判定を含むため、現在はWEB版の設定を反映"
-          trailing={
-            <StatusPill
-              label={preferences.data?.emailEnabled ? '有効' : '無効'}
-              tone={preferences.data?.emailEnabled ? 'brand' : 'neutral'}
-            />
-          }
-        />
-      </View>
+          </>
+        )}
+      </SectionCard>
 
-      <View style={{ gap: appSpacing.sm }}>
-        <SettingsGroupHeading eyebrow="Support & legal" title="サポート" />
-        <ListRow title="ヘルプセンター" onPress={() => void openWebPath('/help', 'ヘルプセンター')} />
-        <ListRow title="利用規約" onPress={() => void openWebPath('/terms', '利用規約')} />
-        <ListRow
-          title="プライバシーポリシー"
-          onPress={() => void openWebPath('/privacy', 'プライバシーポリシー')}
+      <SectionCard>
+        <SectionTitle
+          title="パスワード変更"
+          description="パスワード再設定リンクをメールで送信します。リンク先の安全な画面で新しいパスワードを設定できます。"
         />
-      </View>
-
-      <NativeActionButton
-        label="ログアウト"
-        variant="outlined"
-        tone="danger"
-        onPress={() => void signOut()}
-      />
+        <NativeActionButton
+          label={authPending ? '送信中…' : 'リセットメールを送信'}
+          tone="dark"
+          disabled={authPending || !currentEmail}
+          onPress={() =>
+            Alert.alert(
+              'パスワード再設定メールを送信しますか？',
+              `送信先: ${currentEmail}`,
+              [
+                { text: 'キャンセル', style: 'cancel' },
+                {
+                  text: '送信',
+                  onPress: () =>
+                    void runAuthAction(sendPasswordReset, 'メールを送信できませんでした'),
+                },
+              ],
+            )
+          }
+        />
+      </SectionCard>
     </AppScreen>
   );
 }
 
-function SettingsGroupHeading({ eyebrow, title }: { eyebrow: string; title: string }) {
+function AccountMetric({
+  label,
+  value,
+  accent = false,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+}) {
   const theme = useAppTheme();
-
   return (
-    <View style={{ gap: 2, paddingHorizontal: appSpacing.xs }}>
-      <Text
-        selectable
-        style={{
-          color: theme.brandStrong,
-          fontSize: 9,
-          fontWeight: '900',
-          letterSpacing: 1.5,
-          textTransform: 'uppercase',
-        }}>
-        {eyebrow}
+    <View
+      style={{
+        width: '48.5%',
+        minHeight: 74,
+        justifyContent: 'center',
+        padding: appSpacing.md,
+        gap: 5,
+        borderRadius: appRadii.md,
+        backgroundColor: theme.heroRaised,
+      }}>
+      <Text style={{ color: theme.heroMuted, fontSize: 10, fontWeight: '800' }}>{label}</Text>
+      <Text numberOfLines={1} style={{ color: accent ? theme.brandBright : theme.heroText, fontSize: 14, fontWeight: '900' }}>
+        {value}
       </Text>
-      <Text selectable style={{ color: theme.text, fontSize: 18, fontWeight: '900' }}>
-        {title}
+    </View>
+  );
+}
+
+function SectionTitle({ title, description }: { title: string; description?: string }) {
+  const theme = useAppTheme();
+  return (
+    <View style={{ gap: 4 }}>
+      <Text style={{ color: theme.text, fontSize: 20, fontWeight: '900' }}>{title}</Text>
+      {description ? (
+        <Text style={{ color: theme.textSecondary, fontSize: 12, lineHeight: 18 }}>{description}</Text>
+      ) : null}
+    </View>
+  );
+}
+
+function FieldLabel({ label, required = false }: { label: string; required?: boolean }) {
+  const theme = useAppTheme();
+  return (
+    <Text style={{ color: theme.textSecondary, fontSize: 12, fontWeight: '800' }}>
+      {label}
+      {required ? <Text style={{ color: theme.danger }}> *</Text> : null}
+    </Text>
+  );
+}
+
+function SettingsInput(props: React.ComponentProps<typeof TextInput>) {
+  const theme = useAppTheme();
+  return (
+    <TextInput
+      {...props}
+      placeholderTextColor={theme.textSecondary}
+      style={[
+        {
+          minHeight: 48,
+          paddingHorizontal: appSpacing.md,
+          borderRadius: appRadii.sm,
+          borderWidth: 1,
+          borderColor: theme.border,
+          backgroundColor: theme.surface,
+          color: theme.text,
+          fontSize: 15,
+          fontWeight: '700',
+        },
+        props.style,
+      ]}
+    />
+  );
+}
+
+function ReadOnlyValue({ value }: { value: string }) {
+  const theme = useAppTheme();
+  return (
+    <View
+      style={{
+        minHeight: 48,
+        justifyContent: 'center',
+        paddingHorizontal: appSpacing.md,
+        borderRadius: appRadii.sm,
+        borderWidth: 1,
+        borderColor: theme.border,
+        backgroundColor: theme.surfaceMuted,
+      }}>
+      <Text numberOfLines={1} selectable style={{ color: theme.textSecondary, fontSize: 14, fontWeight: '700' }}>
+        {value}
       </Text>
     </View>
   );

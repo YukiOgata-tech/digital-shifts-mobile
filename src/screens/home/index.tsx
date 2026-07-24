@@ -176,7 +176,7 @@ export function HomeScreen() {
                 { pathname: '/shift-request', params: { periodId: openPeriod.id } } as never,
               );
             } else {
-              router.push('/(staff)/(stores)');
+              router.push('/stores');
             }
           }}
         />

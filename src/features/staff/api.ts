@@ -2,9 +2,11 @@ import { supabase } from '@/lib/supabase';
 
 import type {
   AttendanceRecord,
+  AttendanceStoreStatus,
   HelpRequest,
   OpenShiftPeriod,
   NotificationPreferences,
+  PublishedSchedulePeriod,
   ShiftAssignment,
   ShiftAdjustmentRequestType,
   ShiftAdjustmentWindow,
@@ -222,6 +224,42 @@ export async function fetchStorePublishedSchedule(input: {
   };
 }
 
+export async function fetchPublishedSchedulePeriods(input: {
+  tenantId: string;
+  storeIds: string[];
+}): Promise<PublishedSchedulePeriod[]> {
+  if (!input.storeIds.length) return [];
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from('shift_schedules')
+    .select(
+      'id, store_id, shift_period_id, stores(name), shift_periods(name, start_date, end_date)',
+    )
+    .eq('tenant_id', input.tenantId)
+    .eq('is_published', true)
+    .in('store_id', input.storeIds);
+  if (error) throw error;
+
+  return (data ?? [])
+    .flatMap((row) => {
+      const period = one(row.shift_periods);
+      if (!period) return [];
+      return [
+        {
+          id: row.id,
+          storeId: row.store_id,
+          storeName: one(row.stores)?.name ?? '店舗',
+          periodId: row.shift_period_id,
+          name: period.name,
+          startDate: period.start_date,
+          endDate: period.end_date,
+          yearMonth: period.start_date.slice(0, 7),
+        } satisfies PublishedSchedulePeriod,
+      ];
+    })
+    .sort((a, b) => b.startDate.localeCompare(a.startDate));
+}
+
 export async function fetchShiftAdjustmentWindows(input: {
   userId: string;
   tenantId: string;
@@ -325,6 +363,15 @@ export async function addShiftAdjustmentEntry(input: {
   ) {
     throw new Error('シフト期間内の日付を入力してください。');
   }
+  if (
+    input.assignmentId &&
+    !input.window.assignments.some((assignment) => assignment.id === input.assignmentId)
+  ) {
+    throw new Error('選択したシフトはこの修正受付の対象ではありません。');
+  }
+  if ((input.note?.trim().length ?? 0) > 800) {
+    throw new Error('メモは800文字以内で入力してください。');
+  }
   const needsTime = input.requestType === 'change_time' || input.requestType === 'available';
   if (
     needsTime &&
@@ -398,7 +445,7 @@ export async function fetchOpenShiftPeriods(input: {
   let periodQuery = client
     .from('shift_periods')
     .select(
-      'id, store_id, name, start_date, end_date, request_deadline_at, status, stores(name), shift_period_closed_days(work_date)',
+      'id, store_id, name, start_date, end_date, request_deadline_at, status, use_time_slots, stores(name, timezone), shift_period_closed_days(work_date, reason)',
     )
     .eq('tenant_id', input.tenantId)
     .eq('status', 'open')
@@ -410,25 +457,44 @@ export async function fetchOpenShiftPeriods(input: {
   if (periodError) throw periodError;
   if (!periods?.length) return [];
 
-  const { data: requests, error: requestError } = await client
-    .from('shift_requests')
-    .select(
-      'id, shift_period_id, submitted_at, shift_request_entries(id, work_date, entry_type, is_all_day, start_at, end_at, note)',
-    )
-    .eq('tenant_id', input.tenantId)
-    .eq('user_id', input.userId)
-    .in(
-      'shift_period_id',
-      periods.map((period) => period.id),
-    );
+  const storeIds = [...new Set(periods.map((period) => period.store_id))];
+  const [{ data: requests, error: requestError }, { data: slotRows, error: slotError }] =
+    await Promise.all([
+      client
+        .from('shift_requests')
+        .select(
+          'id, shift_period_id, submitted_at, shift_request_entries(id, work_date, entry_type, is_all_day, start_at, end_at, time_slot_id, note)',
+        )
+        .eq('tenant_id', input.tenantId)
+        .eq('user_id', input.userId)
+        .in(
+          'shift_period_id',
+          periods.map((period) => period.id),
+        ),
+      client
+        .from('store_shift_time_slots')
+        .select('id, store_id, name, short_label, start_time, end_time, color, sort_order')
+        .eq('tenant_id', input.tenantId)
+        .eq('is_active', true)
+        .in('store_id', storeIds)
+        .order('sort_order', { ascending: true }),
+    ]);
   if (requestError) throw requestError;
+  if (slotError) throw slotError;
 
   const requestByPeriod = new Map(
     (requests ?? []).map((request) => [request.shift_period_id, request]),
   );
+  const slotsByStore = new Map<string, NonNullable<typeof slotRows>>();
+  for (const slot of slotRows ?? []) {
+    const items = slotsByStore.get(slot.store_id) ?? [];
+    items.push(slot);
+    slotsByStore.set(slot.store_id, items);
+  }
 
   return periods.map((period) => {
     const request = requestByPeriod.get(period.id);
+    const store = one(period.stores);
     const entries = (request?.shift_request_entries ?? []).map((entry) => ({
       id: entry.id,
       workDate: entry.work_date,
@@ -436,20 +502,34 @@ export async function fetchOpenShiftPeriods(input: {
       isAllDay: entry.is_all_day,
       startAt: entry.start_at,
       endAt: entry.end_at,
+      timeSlotId: entry.time_slot_id,
       note: entry.note,
     }));
     return {
       id: period.id,
       storeId: period.store_id,
-      storeName: one(period.stores)?.name ?? '店舗',
+      storeName: store?.name ?? '店舗',
+      storeTimezone: store?.timezone ?? 'Asia/Tokyo',
       name: period.name,
       startDate: period.start_date,
       endDate: period.end_date,
       requestDeadlineAt: period.request_deadline_at,
+      useTimeSlots: period.use_time_slots,
       requestId: request?.id ?? null,
       submittedAt: request?.submitted_at ?? null,
       entries,
-      closedDates: (period.shift_period_closed_days ?? []).map((day) => day.work_date),
+      closedDays: (period.shift_period_closed_days ?? []).map((day) => ({
+        workDate: day.work_date,
+        reason: day.reason,
+      })),
+      timeSlots: (slotsByStore.get(period.store_id) ?? []).map((slot) => ({
+        id: slot.id,
+        name: slot.name,
+        shortLabel: slot.short_label,
+        startTime: slot.start_time.slice(0, 5),
+        endTime: slot.end_time.slice(0, 5),
+        color: slot.color,
+      })),
     };
   });
 }
@@ -588,29 +668,7 @@ export async function fetchActiveAttendanceRecord(input: {
     .maybeSingle();
   if (activeError) throw activeError;
 
-  let data = activeData;
-  if (!data) {
-    const today = new Intl.DateTimeFormat('en-CA', {
-      timeZone: 'Asia/Tokyo',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-    }).format(new Date());
-    const { data: latestData, error: latestError } = await client
-      .from('attendance_records')
-      .select(
-        'id, store_id, work_date, clock_in_at, clock_out_at, break_minutes, status, review_status, review_required_reason',
-      )
-      .eq('tenant_id', input.tenantId)
-      .eq('store_id', input.storeId)
-      .eq('user_id', input.userId)
-      .eq('work_date', today)
-      .order('clock_in_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (latestError) throw latestError;
-    data = latestData;
-  }
+  const data = activeData;
   if (!data) return null;
 
   let isOnBreak = false;
@@ -641,6 +699,88 @@ export async function fetchActiveAttendanceRecord(input: {
   };
 }
 
+export async function fetchAttendanceStoreStatuses(input: {
+  userId: string;
+  tenantId: string;
+  storeIds: string[];
+}): Promise<AttendanceStoreStatus[]> {
+  if (!input.storeIds.length) return [];
+  const client = requireSupabase();
+  const cutoff = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
+  const { data, error } = await client
+    .from('attendance_records')
+    .select(
+      'id, store_id, work_date, clock_in_at, clock_out_at, break_minutes, status, review_status, review_required_reason',
+    )
+    .eq('tenant_id', input.tenantId)
+    .eq('user_id', input.userId)
+    .eq('status', 'open')
+    .gte('clock_in_at', cutoff)
+    .in('store_id', input.storeIds)
+    .order('clock_in_at', { ascending: false });
+  if (error) throw error;
+
+  const latestByStore = new Map<string, AttendanceRecord>();
+  for (const row of data ?? []) {
+    if (latestByStore.has(row.store_id)) continue;
+    latestByStore.set(row.store_id, {
+      id: row.id,
+      storeId: row.store_id,
+      workDate: row.work_date,
+      clockInAt: row.clock_in_at,
+      clockOutAt: row.clock_out_at,
+      breakMinutes: row.break_minutes ?? 0,
+      status: row.status,
+      reviewStatus: row.review_status,
+      reviewRequiredReason: row.review_required_reason,
+      isOnBreak: false,
+    });
+  }
+
+  return input.storeIds.map((storeId) => ({
+    storeId,
+    record: latestByStore.get(storeId) ?? null,
+  }));
+}
+
+export async function fetchAttendanceRecords(input: {
+  userId: string;
+  tenantId: string;
+  storeIds: string[];
+  fromDate: string;
+  toDate: string;
+}): Promise<AttendanceRecord[]> {
+  if (!input.storeIds.length) return [];
+  const client = requireSupabase();
+  const { data, error } = await client
+    .from('attendance_records')
+    .select(
+      'id, store_id, work_date, clock_in_at, clock_out_at, break_minutes, status, review_status, review_required_reason, stores(name)',
+    )
+    .eq('tenant_id', input.tenantId)
+    .eq('user_id', input.userId)
+    .in('store_id', input.storeIds)
+    .gte('work_date', input.fromDate)
+    .lte('work_date', input.toDate)
+    .order('work_date', { ascending: true })
+    .order('clock_in_at', { ascending: true });
+  if (error) throw error;
+
+  return (data ?? []).map((row) => ({
+    id: row.id,
+    storeId: row.store_id,
+    storeName: one(row.stores)?.name ?? '店舗',
+    workDate: row.work_date,
+    clockInAt: row.clock_in_at,
+    clockOutAt: row.clock_out_at,
+    breakMinutes: row.break_minutes ?? 0,
+    status: row.status,
+    reviewStatus: row.review_status,
+    reviewRequiredReason: row.review_required_reason,
+    isOnBreak: false,
+  }));
+}
+
 export async function recordAttendanceEvent(input: {
   storeId: string;
   eventType: 'clock_in' | 'clock_out' | 'break_start' | 'break_end';
@@ -660,7 +800,7 @@ export async function recordAttendanceEvent(input: {
     p_gps_accuracy_meters: input.gpsAccuracyMeters ?? null,
     p_reason: input.reason?.trim() || null,
   });
-  if (error) throw error;
+  if (error) throw new Error(attendanceErrorMessage(error.message));
   return data as {
     record_id: string;
     event_type: string;
@@ -668,6 +808,34 @@ export async function recordAttendanceEvent(input: {
     review_status: string;
     distance_from_store_meters: number | null;
   };
+}
+
+function attendanceErrorMessage(message: string) {
+  if (message.includes('already clocked in')) {
+    return '既に出勤中の打刻があります。先に退勤してください。';
+  }
+  if (message.includes('active attendance record not found')) {
+    return '退勤対象の出勤打刻がありません。';
+  }
+  if (message.includes('stale attendance record found')) {
+    return '前回の勤務で退勤打刻がされていない記録があります。過去の記録から修正してください。';
+  }
+  if (message.includes('reason required when GPS evidence is unavailable')) {
+    return 'GPS条件を満たせない場合は理由を選択してください。';
+  }
+  if (message.includes('break already started')) {
+    return '既に休憩中です。先に休憩終了を打刻してください。';
+  }
+  if (message.includes('active break not found')) {
+    return '休憩開始の打刻がありません。';
+  }
+  if (message.includes('active store membership required')) {
+    return 'この店舗で打刻する権限がありません。';
+  }
+  if (message.includes('authentication required')) {
+    return '認証の有効期限が切れています。再度ログインしてください。';
+  }
+  return message;
 }
 
 export async function replaceShiftRequestEntries(input: {
@@ -678,11 +846,11 @@ export async function replaceShiftRequestEntries(input: {
     workDate: string;
     entryType: ShiftRequestEntry['entryType'];
     isAllDay: boolean;
-    startAt: string | null;
-    endAt: string | null;
+    startTime: string | null;
+    endTime: string | null;
+    timeSlotId: string | null;
     note?: string | null;
   }[];
-  affectedDates: string[];
 }) {
   const client = requireSupabase();
   if (input.period.submittedAt) {
@@ -691,39 +859,25 @@ export async function replaceShiftRequestEntries(input: {
   if (Date.now() >= new Date(input.period.requestDeadlineAt).getTime()) {
     throw new Error('この希望シフトの提出期限は終了しています。');
   }
-  if (input.entries.some((entry) => input.period.closedDates.includes(entry.workDate))) {
+  const closedDates = new Set(input.period.closedDays.map((day) => day.workDate));
+  if (input.entries.some((entry) => closedDates.has(entry.workDate))) {
     throw new Error('休業日には希望シフトを入力できません。');
   }
 
-  const { data: request, error: requestError } = await client
-    .from('shift_requests')
-    .upsert(
-      {
-        tenant_id: input.tenantId,
-        store_id: input.period.storeId,
-        shift_period_id: input.period.id,
-        user_id: input.userId,
-      },
-      { onConflict: 'shift_period_id,user_id', ignoreDuplicates: false },
-    )
-    .select('id')
-    .single();
-  if (requestError || !request) throw requestError ?? new Error('希望シフトを作成できませんでした。');
-
-  const { error } = await client.rpc('replace_shift_request_entries', {
-    p_request_id: request.id,
-    p_dates: input.affectedDates,
+  const { data, error } = await client.rpc('save_mobile_shift_request_draft', {
+    p_shift_period_id: input.period.id,
     p_rows: input.entries.map((entry) => ({
       work_date: entry.workDate,
       entry_type: entry.entryType,
       is_all_day: entry.isAllDay,
-      start_at: entry.startAt,
-      end_at: entry.endAt,
+      start_time: entry.startTime,
+      end_time: entry.endTime,
       note: entry.note ?? null,
-      time_slot_id: null,
+      time_slot_id: entry.timeSlotId,
     })),
   });
   if (error) throw error;
+  return data as string;
 }
 
 export async function setShiftRequestSubmitted(input: {
@@ -731,11 +885,12 @@ export async function setShiftRequestSubmitted(input: {
   submitted: boolean;
 }) {
   const client = requireSupabase();
-  const { error } = await client
-    .from('shift_requests')
-    .update({ submitted_at: input.submitted ? new Date().toISOString() : null })
-    .eq('id', input.requestId);
+  const { data, error } = await client.rpc('set_mobile_shift_request_submitted', {
+    p_request_id: input.requestId,
+    p_submitted: input.submitted,
+  });
   if (error) throw error;
+  return data as string | null;
 }
 
 export async function fetchNotificationPreferences(input: {
@@ -746,7 +901,7 @@ export async function fetchNotificationPreferences(input: {
   const { data, error } = await client
     .from('notification_preferences')
     .select(
-      'in_app_enabled, email_enabled, shift_published_enabled, shift_changed_enabled, help_requested_enabled, payroll_published_enabled',
+      'in_app_enabled, email_enabled, shift_published_enabled, shift_changed_enabled, help_requested_enabled',
     )
     .eq('tenant_id', input.tenantId)
     .eq('user_id', input.userId)
@@ -758,7 +913,9 @@ export async function fetchNotificationPreferences(input: {
     shiftPublishedEnabled: data?.shift_published_enabled ?? true,
     shiftChangedEnabled: data?.shift_changed_enabled ?? true,
     helpRequestedEnabled: data?.help_requested_enabled ?? true,
-    payrollPublishedEnabled: data?.payroll_published_enabled ?? true,
+    // The current WEB production schema does not expose the payroll preference yet.
+    // Keep the domain default without making the entire settings screen depend on it.
+    payrollPublishedEnabled: true,
   };
 }
 
@@ -768,20 +925,50 @@ export async function updateNotificationPreferences(input: {
   preferences: NotificationPreferences;
 }) {
   const client = requireSupabase();
-  const { error } = await client.from('notification_preferences').upsert(
-    {
-      tenant_id: input.tenantId,
-      user_id: input.userId,
-      in_app_enabled: input.preferences.inAppEnabled,
-      email_enabled: input.preferences.emailEnabled,
-      shift_published_enabled: input.preferences.shiftPublishedEnabled,
-      shift_changed_enabled: input.preferences.shiftChangedEnabled,
-      help_requested_enabled: input.preferences.helpRequestedEnabled,
-      payroll_published_enabled: input.preferences.payrollPublishedEnabled,
-    },
-    { onConflict: 'tenant_id,user_id' },
-  );
-  if (error) throw error;
+  const { error } = await client.rpc('update_mobile_notification_preferences', {
+    p_tenant_id: input.tenantId,
+    p_in_app_enabled: input.preferences.inAppEnabled,
+    p_email_enabled: input.preferences.emailEnabled,
+    p_shift_published_enabled: input.preferences.shiftPublishedEnabled,
+    p_shift_changed_enabled: input.preferences.shiftChangedEnabled,
+    p_help_requested_enabled: input.preferences.helpRequestedEnabled,
+  });
+  if (error) {
+    if (error.code === 'PGRST202' || error.message.includes('Could not find the function')) {
+      // Keep existing deployments usable without allowing a staff client to turn
+      // a paid email feature on before the entitlement-enforcing RPC is deployed.
+      const { data: existing, error: existingError } = await client
+        .from('notification_preferences')
+        .select('email_enabled')
+        .eq('tenant_id', input.tenantId)
+        .eq('user_id', input.userId)
+        .maybeSingle();
+      if (existingError) throw existingError;
+      if (input.preferences.emailEnabled && existing?.email_enabled !== true) {
+        throw new Error(
+          'メール通知を有効にするには、通知設定用のSupabase migrationを適用してください。',
+        );
+      }
+      const { error: fallbackError } = await client.from('notification_preferences').upsert(
+        {
+          tenant_id: input.tenantId,
+          user_id: input.userId,
+          in_app_enabled: input.preferences.inAppEnabled,
+          email_enabled: input.preferences.emailEnabled,
+          shift_published_enabled: input.preferences.shiftPublishedEnabled,
+          shift_changed_enabled: input.preferences.shiftChangedEnabled,
+          help_requested_enabled: input.preferences.helpRequestedEnabled,
+        },
+        { onConflict: 'tenant_id,user_id' },
+      );
+      if (fallbackError) throw fallbackError;
+      return;
+    }
+    if (error.code === '42501' && input.preferences.emailEnabled) {
+      throw new Error('この組織ではメール通知を有効にできません。');
+    }
+    throw error;
+  }
 }
 
 export async function submitManualAttendance(input: {
@@ -812,12 +999,12 @@ export async function updateStaffProfile(input: {
 }) {
   const client = requireSupabase();
   const displayName = input.displayName.trim();
-  if (!displayName || displayName.length > 100) {
-    throw new Error('表示名は1〜100文字で入力してください。');
+  if (!displayName || displayName.length > 50) {
+    throw new Error('表示名は1〜50文字で入力してください。');
   }
   const phoneNumber = input.phoneNumber?.trim() || null;
-  if (phoneNumber && phoneNumber.length > 30) {
-    throw new Error('電話番号は30文字以内で入力してください。');
+  if (phoneNumber && phoneNumber.length > 20) {
+    throw new Error('電話番号は20文字以内で入力してください。');
   }
   const { error } = await client
     .from('profiles')

@@ -2,6 +2,7 @@ import { useRouter } from 'expo-router';
 import { Pressable, Text, View } from 'react-native';
 
 import { AppScreen } from '@/components/ui/app-screen';
+import { TabStackBackButton } from '@/components/navigation/tab-stack-back-button';
 import { EmptyState, ErrorState, LoadingState } from '@/components/ui/data-state';
 import { PageIntro } from '@/components/ui/page-intro';
 import { SectionCard } from '@/components/ui/section-card';
@@ -32,6 +33,7 @@ export function StoresScreen() {
 
   return (
     <AppScreen refreshing={staff.isLoading} onRefresh={() => void staff.refresh()}>
+      <TabStackBackButton fallback="/(staff)/(home)" label="ホーム" />
       <PageIntro
         eyebrow="Stores"
         title="所属店舗"

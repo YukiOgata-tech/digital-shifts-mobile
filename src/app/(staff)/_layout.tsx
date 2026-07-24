@@ -23,14 +23,6 @@ export default function StaffTabLayout() {
         <NativeTabs.Trigger.Label>ホーム</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="(stores)">
-        <NativeTabs.Trigger.Icon
-          sf={{ default: 'storefront', selected: 'storefront.fill' }}
-          md="storefront"
-        />
-        <NativeTabs.Trigger.Label>店舗</NativeTabs.Trigger.Label>
-      </NativeTabs.Trigger>
-
       <NativeTabs.Trigger name="(shifts)">
         <NativeTabs.Trigger.Icon
           sf={{ default: 'calendar', selected: 'calendar.circle.fill' }}

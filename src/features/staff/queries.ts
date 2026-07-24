@@ -7,11 +7,14 @@ import {
   applyToHelpRequest,
   deleteShiftAdjustmentEntry,
   fetchActiveAttendanceRecord,
+  fetchAttendanceRecords,
+  fetchAttendanceStoreStatuses,
   fetchHelpRequests,
   fetchNotifications,
   fetchNotificationPreferences,
   fetchOpenShiftPeriods,
   fetchPublishedAssignments,
+  fetchPublishedSchedulePeriods,
   fetchStorePublishedSchedule,
   fetchShiftAdjustmentWindows,
   markAllNotificationsRead,
@@ -38,7 +41,7 @@ export function useStaffIdentity() {
   };
 }
 
-export function useAssignments(daysBefore = 31, daysAfter = 62) {
+export function useAssignments(daysBefore = 31, daysAfter = 62, includeAllStores = false) {
   const { userId, tenantId, storeId } = useStaffIdentity();
   const now = new Date();
   return useQuery({
@@ -47,7 +50,7 @@ export function useAssignments(daysBefore = 31, daysAfter = 62) {
       fetchPublishedAssignments({
         userId: userId!,
         tenantId: tenantId!,
-        storeId: storeId ?? undefined,
+        storeId: includeAllStores ? undefined : (storeId ?? undefined),
         fromDate: toDateKey(addDays(now, -daysBefore)),
         toDate: toDateKey(addDays(now, daysAfter)),
       }),
@@ -55,7 +58,34 @@ export function useAssignments(daysBefore = 31, daysAfter = 62) {
   });
 }
 
-export function useOpenShiftPeriods() {
+export function useAssignmentsForRange(
+  fromDate: string,
+  toDate: string,
+  includeAllStores = false,
+) {
+  const { userId, tenantId, storeId } = useStaffIdentity();
+  return useQuery({
+    queryKey: [
+      'assignments-range',
+      userId,
+      tenantId,
+      includeAllStores ? 'all' : storeId,
+      fromDate,
+      toDate,
+    ],
+    queryFn: () =>
+      fetchPublishedAssignments({
+        userId: userId!,
+        tenantId: tenantId!,
+        storeId: includeAllStores ? undefined : (storeId ?? undefined),
+        fromDate,
+        toDate,
+      }),
+    enabled: Boolean(userId && tenantId),
+  });
+}
+
+export function useOpenShiftPeriods(includeAllStores = false) {
   const { userId, tenantId, storeId } = useStaffIdentity();
   return useQuery({
     queryKey: ['open-shift-periods', userId, tenantId, storeId],
@@ -63,24 +93,60 @@ export function useOpenShiftPeriods() {
       fetchOpenShiftPeriods({
         userId: userId!,
         tenantId: tenantId!,
-        storeId: storeId ?? undefined,
+        storeId: includeAllStores ? undefined : (storeId ?? undefined),
       }),
     enabled: Boolean(userId && tenantId),
   });
 }
 
-export function useStorePublishedSchedule(yearMonth: string) {
+export function useStorePublishedSchedule(
+  yearMonth: string,
+  selectedStore?: { id: string; name: string },
+) {
   const { tenantId, storeId, activeStore } = useStaffIdentity();
+  const targetStoreId = selectedStore?.id ?? storeId;
+  const targetStoreName = selectedStore?.name ?? activeStore?.name;
   return useQuery({
-    queryKey: ['store-published-schedule', tenantId, storeId, yearMonth],
+    queryKey: ['store-published-schedule', tenantId, targetStoreId, yearMonth],
     queryFn: () =>
       fetchStorePublishedSchedule({
         tenantId: tenantId!,
-        storeId: storeId!,
-        storeName: activeStore!.name,
+        storeId: targetStoreId!,
+        storeName: targetStoreName!,
         yearMonth,
       }),
-    enabled: Boolean(tenantId && storeId && activeStore),
+    enabled: Boolean(tenantId && targetStoreId && targetStoreName),
+  });
+}
+
+export function usePublishedSchedulePeriods() {
+  const { tenantId, stores } = useStaffIdentity();
+  const storeIds = stores.map((store) => store.id);
+  return useQuery({
+    queryKey: ['published-schedule-periods', tenantId, storeIds.join(',')],
+    queryFn: () =>
+      fetchPublishedSchedulePeriods({
+        tenantId: tenantId!,
+        storeIds,
+      }),
+    enabled: Boolean(tenantId && storeIds.length),
+  });
+}
+
+export function useAttendanceRecords(fromDate: string, toDate: string) {
+  const { userId, tenantId, stores } = useStaffIdentity();
+  const storeIds = stores.map((store) => store.id);
+  return useQuery({
+    queryKey: ['attendance-records', userId, tenantId, storeIds.join(','), fromDate, toDate],
+    queryFn: () =>
+      fetchAttendanceRecords({
+        userId: userId!,
+        tenantId: tenantId!,
+        storeIds,
+        fromDate,
+        toDate,
+      }),
+    enabled: Boolean(userId && tenantId && storeIds.length),
   });
 }
 
@@ -187,8 +253,9 @@ export function useApplyToHelpRequest() {
   });
 }
 
-export function useActiveAttendanceRecord() {
-  const { userId, tenantId, storeId } = useStaffIdentity();
+export function useActiveAttendanceRecord(requestedStoreId?: string) {
+  const { userId, tenantId, storeId: activeStoreId } = useStaffIdentity();
+  const storeId = requestedStoreId ?? activeStoreId;
   return useQuery({
     queryKey: ['active-attendance-record', userId, tenantId, storeId],
     queryFn: () =>
@@ -202,6 +269,22 @@ export function useActiveAttendanceRecord() {
   });
 }
 
+export function useAttendanceStoreStatuses() {
+  const { userId, tenantId, stores } = useStaffIdentity();
+  const storeIds = stores.map((store) => store.id);
+  return useQuery({
+    queryKey: ['attendance-store-statuses', userId, tenantId, storeIds.join(',')],
+    queryFn: () =>
+      fetchAttendanceStoreStatuses({
+        userId: userId!,
+        tenantId: tenantId!,
+        storeIds,
+      }),
+    enabled: Boolean(userId && tenantId && storeIds.length),
+    refetchInterval: 60_000,
+  });
+}
+
 export function useRecordAttendanceEvent() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -209,6 +292,8 @@ export function useRecordAttendanceEvent() {
     onSuccess: async () => {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['active-attendance-record'] }),
+        queryClient.invalidateQueries({ queryKey: ['attendance-store-statuses'] }),
+        queryClient.invalidateQueries({ queryKey: ['attendance-records'] }),
         queryClient.invalidateQueries({ queryKey: ['assignments'] }),
       ]);
     },

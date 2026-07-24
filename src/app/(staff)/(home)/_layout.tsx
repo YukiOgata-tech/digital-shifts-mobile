@@ -1,4 +1,4 @@
-import { Stack } from 'expo-router';
+import Stack from 'expo-router/stack';
 
 import { useAppTheme } from '@/constants/app-theme';
 
@@ -12,6 +12,8 @@ export default function HomeLayout() {
         contentStyle: { backgroundColor: theme.background },
       }}>
       <Stack.Screen name="index" options={{ title: 'ホーム' }} />
+      <Stack.Screen name="help" options={{ title: 'ヘルプ募集' }} />
+      <Stack.Screen name="stores" options={{ title: '所属店舗' }} />
     </Stack>
   );
 }

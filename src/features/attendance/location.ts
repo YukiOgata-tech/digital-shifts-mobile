@@ -37,3 +37,21 @@ export async function getAttendanceLocation(): Promise<AttendanceLocationEvidenc
     return { status: 'unavailable' };
   }
 }
+
+export function calculateDistanceMeters(
+  latitude: number,
+  longitude: number,
+  storeLatitude: number,
+  storeLongitude: number,
+) {
+  const earthRadiusMeters = 6_371_000;
+  const toRadians = (value: number) => (value * Math.PI) / 180;
+  const latitudeDelta = toRadians(storeLatitude - latitude);
+  const longitudeDelta = toRadians(storeLongitude - longitude);
+  const value =
+    Math.sin(latitudeDelta / 2) ** 2 +
+    Math.cos(toRadians(latitude)) *
+      Math.cos(toRadians(storeLatitude)) *
+      Math.sin(longitudeDelta / 2) ** 2;
+  return earthRadiusMeters * 2 * Math.atan2(Math.sqrt(value), Math.sqrt(1 - value));
+}

@@ -8,6 +8,7 @@ type AppScreenProps = PropsWithChildren<{
   contentContainerStyle?: StyleProp<ViewStyle>;
   refreshing?: boolean;
   onRefresh?: () => void;
+  scrollEnabled?: boolean;
 }>;
 
 export function AppScreen({
@@ -15,6 +16,7 @@ export function AppScreen({
   contentContainerStyle,
   refreshing = false,
   onRefresh,
+  scrollEnabled = true,
 }: AppScreenProps) {
   const theme = useAppTheme();
 
@@ -22,6 +24,7 @@ export function AppScreen({
     <ScrollView
       contentInsetAdjustmentBehavior="automatic"
       keyboardShouldPersistTaps="handled"
+      scrollEnabled={scrollEnabled}
       refreshControl={
         onRefresh ? (
           <RefreshControl
@@ -36,7 +39,7 @@ export function AppScreen({
       contentContainerStyle={[
         {
           flexGrow: 1,
-          justifyContent: 'center',
+          justifyContent: 'flex-start',
           paddingHorizontal: appSpacing.md,
           paddingVertical: appSpacing.md,
           gap: appSpacing.md,
